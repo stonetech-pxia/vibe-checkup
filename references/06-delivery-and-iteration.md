@@ -31,7 +31,7 @@
 
 ### 6.5 ★ Rollback Capability (Release Check)
 - **Check**: Whether every release is tagged; whether prior build artifacts are retained for redistribution; whether database migrations are reversible; whether remote config / feature flags can disable a feature without a new release; whether servers can one-click redeploy the previous version. **Local data formats** (config, saves, local DBs, caches): are they versioned? When a new version reads data written by an older version, does it migrate, read compatibly, error out, or silently reset?
-- **Verdict**: Cannot revert to the previous version within 1 hour during an incident → 🔴 (paid or large user base) / 🟠. Upgrade makes old data unreadable or silently resets it → 🔴 (user data loss) / 🟠 (rebuildable cache).
+- **Verdict**: Cannot revert to the previous version within 1 hour during an incident → 🔴 (paying users or a large user base) / 🟠. Upgrade makes old data unreadable or silently resets it → 🔴 (user data loss) / 🟠 (rebuildable cache).
 
 ### 6.6 ★ Crash Safety Net & Safe Mode (Release Check; Client Apps)
 - **Check**:

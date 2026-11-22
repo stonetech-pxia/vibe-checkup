@@ -7,7 +7,7 @@ Healthy state: **Layered tests, run only what you touched, save heavy suites for
 ---
 
 ### 4.1 ★ Can the Tests Actually Run?
-- **Check**: Find test commands (`package.json` scripts, `Makefile`, pytest config, Xcode schemes, CI config). Read test code and config to check whether running them hits real external services, writes to a real database, calls paid APIs, or writes snapshot files. **Ask the user before running tests**, specifying the exact command, estimated duration, and any files it may write (caches, snapshots). If approved, run only the fastest layer with snapshot-writing disabled (e.g., Jest `--ci`), in the background with a 5-minute timeout, and record pass count, failure count, and duration. If declined, do a static assessment only and note `not run` (or `needs approval, not run`) in the verdict.
+- **Check**: Find test commands (`package.json` scripts, `Makefile`, pytest config, Xcode schemes, CI config). Read test code and config to check whether running them hits real external services, writes to a real database, calls paid APIs, or writes snapshot files. **Ask the user before running tests**, specifying the exact command, estimated duration, and any files it may write (caches, snapshots). If approved, run only the fastest layer with snapshot-writing disabled (e.g., Jest `--ci`), in the background with a 5-minute timeout, and record pass count, failure count, and duration. If declined, do a static assessment only and note `not run` in the verdict.
 - **Verdict**: Tests fail to run or have widespread unaddressed failures → 🟠 (green signal is broken; agents cannot self-verify). Unsafe side effects prevent running → 🟡 (missing environment isolation; see 6.9).
 
 ### 4.2 ★ Layering, Scoped Execution & Runtime

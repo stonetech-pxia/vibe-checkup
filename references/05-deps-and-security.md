@@ -1,6 +1,6 @@
 # Dimension 5: Dependencies, Licenses & Security
 
-**Root cause**: AI optimizes for "make it run": dropping secrets straight into code, checking auth only on the frontend, leaving database rules wide open, pulling in unfamiliar packages on a whim, and pasting open-source code without checking its license. Harmless in a throwaway prototype; an incident waiting to happen once real users or commercial distribution arrive.
+**Root cause**: AI optimizes for "make it run": dropping secrets straight into code, checking auth only on the frontend, leaving database rules wide open, pulling in unfamiliar packages on a whim, and pasting open-source code without checking its license. Not a big deal in the prototype stage, but once real users or commercial use arrive, any one of these can become an incident.
 
 (See `agent-brief.md` Discipline #4 for secret redaction rules.)
 
@@ -17,7 +17,7 @@
 ### 5.2 ★ Authentication & Authorization
 - **Check**: Whether every backend route / cloud function enforces auth; whether authorization is checked only on the frontend; whether resource lookups by ID verify ownership (IDOR); whether Supabase RLS is enabled or Firebase rules are left as `if true`; whether admin or debug endpoints are exposed.
 - **Verdict**: Any gap involving real user data → 🔴; in `prototype` stage → 🟠 with note `must fix before launch`.
-- **Desktop app local endpoints** (local WebSocket/HTTP, IPC) follow this rule too: binding strictly to `127.0.0.1` and rejecting requests with an `Origin` header is the baseline—missing either → 🟠 (any web page can invoke it); baseline present but no auth token, allowing other local processes to connect and read sensitive data like screenshots, transcripts, or files → 🟡; binding to `0.0.0.0` → 🔴.
+- **Desktop app local endpoints** (local WebSocket/HTTP, IPC) are judged separately as follows: binding strictly to `127.0.0.1` and rejecting requests with an `Origin` header is the baseline—missing either → 🟠 (any web page can invoke it); baseline present but no auth token, allowing other local processes to connect and read sensitive data like screenshots, transcripts, or files → 🟡; binding to `0.0.0.0` → 🔴.
 - **Metered / paid endpoints**: Does the backend proxy LLMs, SMS, email, or other pay-per-use third-party APIs? Does it enforce auth and rate limiting (per user or IP)? Do retries, polling loops, and agent loops have upper bounds? Unauthenticated paid endpoint callable by anyone → 🔴 if external users exist, otherwise 🟠 with note `must fix before launch`; authenticated but no rate limit, or unbounded loops → 🟡.
 
 ### 5.3 Injection, Dangerous APIs, Misconfiguration & Privacy
@@ -45,7 +45,7 @@
   - **AGPL**: serving over a network also triggers open-source obligations
   - **SSPL / BUSL / CC-BY-NC / Commons Clause**: non-OSS or restricts commercial use
 - **Verdict**: GPL/AGPL/SSPL code in a closed-source or commercial project → 🔴 (send to user to decide: replace, isolate in a separate process, or open-source). Permissive licenses missing copyright notices → 🟡. If project stage or commercial intent is unclear, list in "Decisions Needed".
-  - **Permissive open-source project + optional GPL component**: component is not in the repo, installed by the user, invoked as a separate process, and documented in NOTICES → pass; repo directly imports it → note "combining and distributing with the GPL component triggers GPL", ⚪.
+  - **Permissive open-source project + optional GPL component**: component is not in the repo, installed by the user, invoked as a separate process, and documented in NOTICES → pass; repo directly imports it → note "this part is governed by GPL when distributed together with the GPL component", ⚪.
   - **AI-generated assets** (TTS audio, generated images, model textures, voice references) bundled with the project: rights depend on the generator's plan terms (some free tiers forbid commercial use or require attribution). If provenance cannot be verified → list in "Decisions Needed", ⚪.
 
 ### 5.6 Reinventing the Wheel

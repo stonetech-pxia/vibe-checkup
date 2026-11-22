@@ -52,7 +52,7 @@
 
 ### 2.10 One-Off Script Sprawl
 - **Check**: scan §2 `one_off_scripts` (by filename) and `unreferenced_scripts` (filename mentioned nowhere else); clusters of undocumented scripts in the same directory also count. Inspect each: is it referenced by README, rule files, `package.json` scripts, or tests? Does the problem it investigated still exist?
-- **Verdict**: Unreferenced probe scripts for already-solved issues → 🟡 (agents will treat them as active tools to read and maintain). Repeatedly used debug scripts → pass, provided they have entry-point documentation (cross-check 4.6).
+- **Verdict**: Unreferenced probe scripts for already-solved issues → 🟡 (agents will treat them as active tools to read and maintain). Repeatedly used debug scripts → pass, though they should have entry-point documentation (cross-check 4.6).
 
 ### 2.11 Lying Comments & Edit Narration
 - **Check**:

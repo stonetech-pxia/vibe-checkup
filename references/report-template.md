@@ -1,104 +1,104 @@
-# 报告模板
+# Report Template
 
-报告写给项目作者看，作者不一定懂实现语言。每节先说结论，再给证据；技术细节放在发现条目里，不放在总评里。没有内容的节写"无"，不要删节。密钥只写脱敏片段。
+This report is written for the project author, who may not know the implementation language. Lead every section with the conclusion, then give evidence; keep technical details inside individual finding entries rather than the overall assessment. Write "None" for empty sections—never delete sections. Redact all secrets.
 
-front matter 机器要读，字段不能改名。正常模式写 `report.md`，快速模式写 `fast-report.md`：
+Front matter is machine-parsed—do not rename keys. Normal mode writes `report.md`; fast mode writes `fast-report.md`:
 
 ````markdown
 ---
-mode: normal            # 快速模式写 fast
+mode: normal            # write "fast" for fast mode
 date: YYYY-MM-DD
-commit: <建档时的完整 hash；不是 git 仓库写 none>
-dirty: false            # 建档时工作区有无未提交改动
-# 仅快速模式再加三行：
-# base: <基线 commit，无基线写 none>
-# head: <本次建档时的 commit>
-# scope: <增量：改动 N 个文件 | 全量：无基线（没有记录 / hash 不存在 / 改动过大）>
+commit: <full hash at profiling time; write "none" if not a git repo>
+dirty: false            # whether the working tree had uncommitted changes at profiling time
+# Add these three lines in fast mode only:
+# base: <baseline commit; write "none" if no baseline>
+# head: <commit at this profiling run>
+# scope: <incremental: N files changed | full: no baseline (no record / commit missing / changes too large)>
 ---
 
-# 项目体检报告：<项目名>
+# Project Checkup Report: <project_name>
 
-- 日期：YYYY-MM-DD
-- 阶段判断：原型 / 自用 / 准备发布 / 已发布（依据：…）；分发方式：安装包 / 托管服务 / 源码运行
-- 技术栈：…
-- 体检方式：完整 / 快速（快速模式只评 ★ 项；写明审查范围）；是否经过第二个模型交叉复核
-- 本次未执行（需你批准）：…（如运行测试、启动应用、联网审计）
-- 已评分维度：1, 2, 3, 4, 5, 6（不适用的列出理由）
+- Date: YYYY-MM-DD
+- Stage: prototype / personal / pre-release / released (basis: …); distribution: installer/binary / hosted service / run from source
+- Tech stack: …
+- Checkup mode: normal / fast (fast mode checks ★ items only; state review scope); cross-verified by a second model: yes / no
+- Not run (requires approval): … (e.g., running tests, launching the app, online audit)
+- Scored dimensions: 1, 2, 3, 4, 5, 6 (list reasons for any N/A dimensions)
 
-## 建档卡
+## Project Profile
 
-（照抄第 1 步的建档卡全部字段；快速模式要复用它，所以正常模式必须写全。）
+(Copy all fields from Step 1's profile card; fast mode reuses this, so normal mode must fill it in completely.)
 
-## 总评
+## Overall Assessment
 
-**<总分>/100 · <健康 | 亚健康 | 需要治理 | 失控>**
-（有 🔴 时等级最高为"需要治理"）
+**<total>/100 · <Healthy | Fair | Needs Remediation | Out of Control>**
+(Capped at "Needs Remediation" whenever any 🔴 exists.)
 
-<两三句话的诊断：这个项目最主要的沉积在哪里，继续不治理会先在哪里出事。>
+<2–3 sentence diagnosis: where the project's primary sediment sits, and what will break first if left unaddressed.>
 
-| 维度 | 分数 | 🔴 | 🟠 | 🟡 | ⚪ | 一句话 |
-|------|------|----|----|----|----|--------|
-| 1 一致性与唯一信息源 | x/10 | | | | | |
-| 2 代码卫生 | | | | | | |
-| 3 文档与规则 | | | | | | |
-| 4 测试体系 | | | | | | |
-| 5 依赖、许可证与安全 | | | | | | |
-| 6 交付与迭代治理 | | | | | | |
+| Dimension | Score | 🔴 | 🟠 | 🟡 | ⚪ | One-liner |
+|-----------|-------|----|----|----|----|-----------|
+| 1 Consistency & Single Source of Truth | x/10 | | | | | |
+| 2 Code Hygiene | | | | | | |
+| 3 Docs & Rules | | | | | | |
+| 4 Test Suite | | | | | | |
+| 5 Dependencies, Licenses & Security | | | | | | |
+| 6 Delivery & Iteration Governance | | | | | | |
 
-（按检查项计分：每项只按最严重的一条发现扣一次，🔴 扣得最多；每个维度满分 10。）
+(Scored per check item: each item is deducted once by its highest-severity finding, with 🔴 deducting the most; each dimension is out of 10.)
 
-### 与上次体检对比
-（没有上次报告就写"首次体检"）
-- 总分：上次 → 本次（按评分规则不可比时写"范围不同，不比较总分"；快速模式没有基线写"无基线可比"）
-- 各维度分：上次 → 本次
-- 已解决：…
-- 新出现：…
-- **反复出现**（上次就有、仍未解决）：… ← 这些最需要变成规则或硬闸门
+### Comparison with Previous Checkup
+(Write "First checkup" if no previous report exists.)
+- Total score: previous → current (write "Scope differs; total scores not comparable" when scoring rules disallow comparison; in fast mode with no baseline, write "No baseline for comparison")
+- Dimension scores: previous → current
+- Resolved: …
+- Newly introduced: …
+- **Recurring** (present last time and still unresolved): … ← prime candidates for rules or hard gates
 
-## 先止血（🔴）
+## Stop the Bleeding (🔴)
 
-每条一行：标题（检查项编号）+ 最小修复方案；全文在"全部发现"里，不重抄。有分歧的发现写明各方意见（检查者 / 主流程复核 / 第二模型）和计分依据。
+One line per finding: title (check item ID) + minimal fix; full details live in "All Findings"—do not duplicate them here. For disputed findings, state each party's view (inspector / main-agent verifier / second model) and the scoring basis.
 
-## 全部发现
+## All Findings
 
 <!-- FINDINGS -->
 
-（上面这一行原样保留，不要自己写发现：`baseline.py assemble` 会把它换成各发现文件的全文。这段说明不要写进报告。）
+(Keep the line above verbatim and do not write findings yourself: `baseline.py assemble` replaces it with the full contents of the findings files. Do not include this note in the final report.)
 
-## 规则沉淀建议
+## Suggested Rules
 
-由第 3 步找到的、没有规则防护的复发模式转写而来。每条：一行、正面陈述、指向唯一信息源路径、注明来源发现编号。
+Distilled from the unguarded recurring patterns found in Step 3. One rule per line, stated affirmatively, pointing to the single source of truth, and citing the source finding ID.
 
 ```md
-<!-- 建议追加到 AGENTS.md（或 CLAUDE.md） -->
-- 颜色、间距、圆角只能来自 `<token 文件路径>`；新增值先加到 token 文件。（来源 1.1）
-- 少量选项的单选统一用 `<组件名>` 组件，不用下拉框。（来源 1.3）
-- 只改了某个模块时，只运行 `<局部测试命令>`；全量测试留到功能完成后跑一次。（来源 4.2）
+<!-- Suggested additions to AGENTS.md (or CLAUDE.md) -->
+- Colors, spacing, and border radii must come from `<token file path>`; add new values to the token file first. (From 1.1)
+- Use `<ComponentName>` for small-set single-choice inputs instead of dropdowns. (From 1.3)
+- When modifying a single module, run only `<scoped test command>`; save the full test suite for after the feature is complete. (From 4.2)
 ```
 
 ```md
-<!-- 建议追加到 review.md / review 清单 -->
+<!-- Suggested additions to review.md / review checklist -->
 - …
 ```
 
-## 治理任务
+## Remediation Tasks
 
-每个任务互相独立、适合一个 agent 会话完成。
+Each task should be self-contained and sized for a single agent session.
 
-| # | 任务 | 解决的发现 | 工作量 | 验收标准 | 前置 |
-|---|------|------------|--------|----------|------|
-| 1 | | | S/M/L | 可检查的完成条件 | |
+| # | Task | Findings Resolved | Effort | Acceptance Criteria | Prerequisite |
+|---|------|-------------------|--------|---------------------|--------------|
+| 1 | | | S/M/L | Verifiable completion condition | |
 
-## 需要你决定的事
+## Decisions Needed
 
-只有项目作者能拍板的问题：砍掉或换方案的功能（6.8）、许可证处理（5.5）、阶段判断是否正确、要不要运行测试或打开应用做实测（4.1、1.5）、某条规则是否符合你的产品意图……每条给出选项和各自代价。
+Decisions only the project author can make: cutting or rethinking a stuck feature (6.8), license resolution (5.5), confirming the stage assessment, whether to run tests or launch the app for live checks (4.1, 1.5), whether a proposed rule matches product intent… List options and trade-offs for each.
 
-## 检查覆盖
+## Check Coverage
 
-| 维度 | 发现 | 通过 | 不适用 | 需批准，未执行 | 未查（快速模式） | 沿用基线（快速模式） |
-|------|------|------|--------|----------------|------------------|----------------------|
-| 1 | 1.1, 1.3 | 1.2, 1.4 … | 1.5（无 UI）| | | |
-| … | | | | | |
+| Dimension | Findings | Pass | N/A | Needs Approval, Not Run | Not Checked (Fast Mode) | Carried from Baseline (Fast Mode) |
+|-----------|----------|------|-----|-------------------------|-------------------------|-----------------------------------|
+| 1 | 1.1, 1.3 | 1.2, 1.4 … | 1.5 (no UI) | | | |
+| … | | | | | | |
 
-通过项一行带过即可，让作者知道哪些已经查过、是健康的。合并到别处的项放在"发现"栏，写成 `1.2（见 1.1）`；它不计分。
+Summarize passing items concisely in one line so the author knows what was checked and is healthy. List items merged into another check item under "Findings" as `1.2 (see 1.1)`; they are not scored.
 ````

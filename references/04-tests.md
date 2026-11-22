@@ -1,46 +1,46 @@
-# 维度 4：测试体系
+# Dimension 4: Test Suite
 
-**病因**：AI 很积极地写测试，尤其是单元测试，结果是大量机械的、表面的测试——断言常量、断言 mock 被调用、断言"不为空"。它们抓不到真 bug，却在每次实现变化时一起坏，逼 agent 去改测试，浪费 token 和时间。另一边，偏防御的模型改一行就跑一次全量测试，一小时里有二十分钟在等测试。
+**Root cause**: AI writes tests enthusiastically—especially unit tests—often producing piles of mechanical, superficial tests that assert constants, assert mocks were called, or assert "not null". They catch no real bugs yet break whenever implementation details shift, forcing agents to rewrite tests and waste tokens. On the other extreme, overly defensive models run the full suite after every one-line edit, burning 20 minutes of every hour waiting on tests.
 
-健康的状态：**测试分层，改哪跑哪，重测试留到最后，关键用户流程有真正端到端的验证，体验类问题由人验收。**
+Healthy state: **Layered tests, run only what you touched, save heavy suites for the end, true end-to-end verification for core user flows, and human sign-off for user experience.**
 
 ---
 
-### 4.1 ★ 测试能不能跑
-- **查**：找测试命令（package.json scripts、Makefile、pytest 配置、Xcode scheme、CI 配置）。读测试代码和配置，判断它是否会连真实外部服务、写真实数据库、花钱调用 API、写快照文件。**运行测试前先问用户**，说明要跑哪条命令、预计耗时、可能写哪些文件（缓存、快照）。用户同意后，只跑最快的那一层，加不写快照的参数（如 Jest 的 `--ci`），后台运行、设 5 分钟超时，记录通过数、失败数、耗时。用户不同意就只做静态判断，并在结论里注明"未运行"。
-- **判**：测试跑不起来或大量失败且无人知晓 → 🟠（绿色信号失效，agent 无法自检）。有副作用不敢跑 → 🟡（缺环境隔离，见 6.9）。
+### 4.1 ★ Can the Tests Actually Run?
+- **Check**: Find test commands (`package.json` scripts, `Makefile`, pytest config, Xcode schemes, CI config). Read test code and config to check whether running them hits real external services, writes to a real database, calls paid APIs, or writes snapshot files. **Ask the user before running tests**, specifying the exact command, estimated duration, and any files it may write (caches, snapshots). If approved, run only the fastest layer with snapshot-writing disabled (e.g., Jest `--ci`), in the background with a 5-minute timeout, and record pass count, failure count, and duration. If declined, do a static assessment only and note `not run` (or `needs approval, not run`) in the verdict.
+- **Verdict**: Tests fail to run or have widespread unaddressed failures → 🟠 (green signal is broken; agents cannot self-verify). Unsafe side effects prevent running → 🟡 (missing environment isolation; see 6.9).
 
-### 4.2 ★ 分层、局部运行与耗时
-- **查**：是否区分了纯逻辑测试 / UI 测试 / 端到端测试？能否只跑某个模块的测试（按路径、tag、target）？规则文件里有没有"改了 X 只跑 Y，功能完成后再跑全量"的约定？全量耗时多少（看 CI 日志、4.1 的结果或测试数量估算）？
-- **判**：只能全量跑 → 🟡；全量很慢（>3 分钟）且规则未约束运行频率 → 🟠。处方：把运算类逻辑抽成独立测试模块，UI 测试分开，在规则里写清局部测试命令。
+### 4.2 ★ Layering, Scoped Execution & Runtime
+- **Check**: Are pure logic tests, UI tests, and E2E tests separated? Can you run tests for a single module (by path, tag, or target)? Do rule files specify "touch X → run only Y; run full suite after feature completion"? How long does the full suite take (from CI logs, 4.1 results, or estimated from test count)?
+- **Verdict**: Full-suite-only execution → 🟡; slow full suite (>3 minutes) with no rule constraining run frequency → 🟠. Prescription: extract pure logic into standalone test modules, separate UI tests, and document scoped test commands in rule files.
 
-### 4.3 ★ 表面测试与机械测试
-- **查**：scan §6 弱断言统计。再从不同模块**抽 10 个测试**亲自读，逐个归类：
-  - 有效：验证业务规则、边界、回归过的真实 bug
-  - 表面：断言常量/字面量、`toBeDefined`/`toBeTruthy`/`NotNil` 一类、测试框架或语言本身的行为
-  - 镜像实现：把实现逻辑抄一遍再比较；全 mock 后断言 mock 被调用
-  - 脆弱：实现细节一变就坏，但用户行为没变
-  一个测试里有多条断言时，按它的**主断言**（标题承诺验证的那件事）归类；次要断言的问题单独备注。标题承诺了、正文却没断言的，也记一笔。
-- **判**：抽样中表面+镜像+脆弱占比 >40% → 🟠；20–40% → 🟡。报告里给出比例和例子，处方是"列出可删的测试清单，由用户确认后删除"。
+### 4.3 ★ Superficial & Mechanical Tests
+- **Check**: scan §6 weak-assertion counts. Also **sample 10 tests** across different modules, read them directly, and classify each:
+  - Effective: verifies business rules, edge cases, or past regression bugs
+  - Superficial: asserts constants/literals, `toBeDefined`/`toBeTruthy`/`NotNil`, or framework/language built-in behavior
+  - Implementation mirror: copies implementation logic and compares against itself; mocks everything and asserts the mocks were called
+  - Brittle: breaks when implementation details change even though user-visible behavior is unchanged
+  When a test has multiple assertions, classify it by its **primary assertion** (what the test title promises to verify) and note issues with secondary assertions separately. Also note tests whose body never asserts what the title promises.
+- **Verdict**: Superficial + mirror + brittle >40% of sample → 🟠; 20–40% → 🟡. Report the ratio and concrete examples; prescribe "draft a candidate deletion list for user approval before removing".
 
-### 4.4 ★ 关键用户流程覆盖
-- **查**：拿建档卡里的核心用户流程，逐条看：有没有一个端到端/集成测试或一个可重复执行的脚本能证明它跑通？（真正点击/调用，而不是单测拼凑）
-- **判**：核心流程没有任何端到端验证 → 🟠。若有迹象表明某条核心流程目前就跑不通 → 🔴。4.4 不是发布类检查项，**不因阶段降级**：没有端到端验证会让 agent 无法自检，与有没有外部用户无关。git 历史里出现过"单测全绿却启动即崩"一类修复提交的，把它作为证据写进去。
-- **名字可解析**（只对改动文件查：快速模式的增量范围，以及 SKILL.md 第 5 步执行之后。仅动态语言项目：JS、Python、Lua、Ruby、PHP 等；Swift、Kotlin、Rust、Go 等编译型项目由编译器保证，跳过）：改动行里新用到的函数、变量、类、模块名，在本文件里有没有定义或 import / require。本机已装 lint 时只对改动文件跑它，比读 diff 准：JS 在项目已有 eslint 配置时 `npx --no-install eslint <改动文件>`，看 `no-undef` 一类结果；Python 用 `ruff check --select F821 <改动文件>` 或 `python -m pyflakes <改动文件>`。一律不加 `--fix`。没装就静态读 diff。缺名记为 4.4 的发现，写明"启动或运行时才暴露"；位于启动路径或核心流程 → 🔴（核心流程实际跑不通），否则 🟠。这是 `npm test` 覆盖不到的启动路径上最便宜的防线。
+### 4.4 ★ Critical User Flow Coverage
+- **Check**: Take each core user flow from the profile card and check whether an E2E/integration test or a repeatable script proves it works end-to-end (real clicks/calls, not stitched-together unit tests).
+- **Verdict**: Core flows have zero end-to-end verification → 🟠. Evidence that a core flow is currently broken → 🔴. Item 4.4 is not a release check and is **never downgraded for stage**: lacking end-to-end verification blinds agents from self-checking regardless of whether external users exist. If git history shows fixes like "unit tests all green, crashed on launch", cite them as evidence.
+- **Name resolution** (check only on modified files: fast-mode incremental scope and after Step 5 execution in `SKILL.md`; dynamic languages only—JS, Python, Lua, Ruby, PHP, etc.; skip compiled languages like Swift, Kotlin, Rust, Go where the compiler guarantees this): verify that every function, variable, class, or module name newly referenced in changed lines is defined or imported/required in that file. If a linter is installed locally, run it only on the modified files (more accurate than eyeballing diffs): for JS with an existing eslint config run `npx --no-install eslint <changed_files>` and check `no-undef`-like errors; for Python run `ruff check --select F821 <changed_files>` or `python -m pyflakes <changed_files>`. Never pass `--fix`. If no linter is installed, inspect the diff statically. Report missing symbols under 4.4, noting "only surfaces at startup or runtime": 🔴 if on a startup path or core flow (core flow actually broken), otherwise 🟠. This is the cheapest line of defense for startup paths untouched by `npm test`.
 
-### 4.5 被跳过、被禁用、永远绿
-- **查**：scan §6 skipped/only 数；注释掉的断言；测试脚本里的 `|| true`；CI 的 `continue-on-error`；捕获异常后直接通过的测试。
-- **判**：🟡；掩盖已知失败的 → 🟠。
+### 4.5 Skipped, Disabled & Always-Green Tests
+- **Check**: scan §6 `skipped/only` count; commented-out assertions; `|| true` in test scripts; `continue-on-error` in CI; tests that catch exceptions and pass anyway.
+- **Verdict**: 🟡; masking known failures → 🟠.
 
-### 4.6 ★ 程序化调试工具
-- **查**：经常需要调试的链路（上传文件、登录、某个复杂操作序列）有没有被封装成 CLI / 脚本 / 测试辅助函数，让 agent 传几个参数就能复现，而不是每次用 browser-use / computer-use 手点？有没有测试数据的 seed/fixture？桌面应用能否在后台/无界面模式运行测试，不抢占用户屏幕？
-- **判**：反复手动走同一链路而没有工具 → 🟡（报告里写出值得封装的链路）。
+### 4.6 ★ Programmatic Debug Tools
+- **Check**: Are frequently debugged flows (file uploads, login, complex action sequences) wrapped in CLIs, scripts, or test helpers so an agent can reproduce them with a few arguments instead of clicking through via browser-use / computer-use every time? Are there test data seeds/fixtures? Can desktop apps run tests headless / in the background without stealing focus from the user's screen?
+- **Verdict**: Repeatedly walking the same flow manually with no tooling → 🟡 (name the flows worth wrapping in the report).
 
-### 4.7 人工体验验收
-- **查**：AI 的端到端测试只能保证流程跑得通，交互是否顺手、设计是否优雅只能由人判断。项目里有没有一份"发版前人要亲手过一遍"的清单（核心流程、新功能、易回归的交互）？方案或 PR 里是否写了人工验收步骤？
-- **判**：已发布、有 UI 却没有任何人工验收清单 → 🟡；准备发布 → ⚪，但写明"首次发布前补上"。处方：从核心用户流程生成一份 5–10 条的清单，放进发布流程文档。
+### 4.7 Manual UX Acceptance
+- **Check**: AI-driven E2E tests only prove a flow executes; only a human can judge whether the interaction feels smooth and the design looks right. Does the project have a pre-release human walkthrough checklist (core flows, new features, regression-prone interactions)? Do proposals or PRs include manual acceptance steps?
+- **Verdict**: Released project with UI and no manual acceptance checklist → 🟡; `pre-release` → ⚪, noting "add before first release". Prescription: derive a 5–10 item checklist from the core user flows and place it in the release process doc.
 
-### 4.8 性能基线（仅性能敏感项目）
-性能敏感指用户能直接感到快慢的项目：实时语音/视频、游戏和动画、大列表或大文件处理、启动频繁的桌面工具、有 SLA 的服务。对应指标举例：首句/首字延迟、帧率、启动时间、P95 响应时间。
-- **查**：有没有可重复的性能脚本和记录下来的基线数字？性能目标是否现实？是否有为不可能的指标反复优化、把代码改得更乱的痕迹（同一文件多轮 "optimize" 提交）？
-- **判**：性能敏感却无基线 → 🟡；追逐不现实目标导致复杂度上升 → 🟠。
+### 4.8 Performance Baselines (Performance-Sensitive Projects Only)
+Performance-sensitive means projects where users directly feel latency or smoothness: real-time audio/video, games and animations, large lists or large file processing, frequently launched desktop tools, or services with SLAs. Example metrics: time to first token/speech, frame rate, startup time, P95 latency.
+- **Check**: Is there a repeatable benchmark script and recorded baseline numbers? Are performance targets realistic? Are there signs of repeatedly chasing an impossible target and making code messier (multiple rounds of "optimize" commits on the same file)?
+- **Verdict**: Performance-sensitive with no baseline → 🟡; chasing unrealistic targets and adding complexity → 🟠.

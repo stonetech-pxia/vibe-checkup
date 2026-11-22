@@ -1,51 +1,51 @@
-# 维度 1：一致性与唯一信息源
+# Dimension 1: Consistency & Single Source of Truth
 
-**病因**：AI 写新功能时看不到全局，每次就地实现一套样式、一个组件、一种交互。单看每个功能都"能用"，放在一起就没有品牌感，且下一个 agent 不知道该模仿哪一套——它会随机挑一套，或者再造第 N 套。
+**Root cause**: When AI builds a new feature without seeing the whole repo, it invents a local set of styles, a new component, and a new interaction pattern on the spot. Each feature "works" in isolation, yet together the product lacks cohesion—and the next agent has no idea which pattern to follow, so it picks one at random or invents pattern #N.
 
-**判断主线**：每一类东西（颜色、间距、按钮、单选、弹窗、请求层……）是否只有**一个**权威来源，且代码真的在用它。
+**Guiding test**: For each category (colors, spacing, buttons, single-choice inputs, modals, request layers…), is there **one** authoritative source, and does the code actually use it?
 
 ---
 
-### 1.1 ★ 设计 token 唯一信息源
-- **查**：scan §2 的 token 文件提示与 `hardcoded_color` / `hardcoded_size`。统计 token 文件之外出现的字面颜色种类（`git grep` 自动跳过 node_modules 等被忽略的目录；非 git 项目改用 `grep -rhoE … --exclude-dir=node_modules --exclude-dir=dist`）：
-  `git grep -hoiE "#[0-9a-f]{6}\b|#[0-9a-f]{3}\b|rgba?\([^)]*\)" -- <源码目录> | tr A-F a-f | sort | uniq -c | sort -rn | head -40`（rgba 也要统计：半透明色最容易漂移）
-  同时看间距、圆角、字号、阴影、动画时长是否有统一来源（CSS 变量、Tailwind theme、SwiftUI 扩展、Theme 对象）。
-- **判**：没有 token 文件 → 🟠。有 token 文件但大量绕开 → 🟠。出现近似重复色（`#333` / `#323232` / `#2f2f2f`）说明已经在漂移。只有零星几处、且是一次性的（如图表调色板）→ 🟡 或通过。
+### 1.1 ★ Single Source of Truth for Design Tokens
+- **Check**: scan §2's token file hints and `hardcoded_color` / `hardcoded_size`. Count unique literal colors outside token files (`git grep` automatically skips git-ignored directories like `node_modules`; for non-git projects use `grep -rhoE … --exclude-dir=node_modules --exclude-dir=dist`):
+  `git grep -hoiE "#[0-9a-f]{6}\b|#[0-9a-f]{3}\b|rgba?\([^)]*\)" -- <src_dir> | tr A-F a-f | sort | uniq -c | sort -rn | head -40` (include `rgba`: semi-transparent colors drift the fastest).
+  Also check whether spacing, border radius, font size, shadows, and animation durations come from a single source (CSS variables, Tailwind theme, SwiftUI extensions, Theme object).
+- **Verdict**: No token file → 🟠. Token file exists but is widely bypassed → 🟠. Near-duplicate colors (`#333` / `#323232` / `#2f2f2f`) indicate drift is already underway. Only a few isolated one-off literals (e.g., chart palette) → 🟡 or pass.
 
-### 1.2 ★ 通用组件复用
-- **查**：找基础组件目录（components/ui、common、shared、DesignSystem、Views/Components）。列出 Button / Input / Select / Modal(Dialog/Sheet/Popup) / Card / Toast / Tabs / Empty / Loading 各有几个实现。然后 grep 绕过基础组件的原生用法（例如已有 `Button` 组件却仍在用 `<button className=…>`；已有统一 Sheet 却到处自写 overlay）。
-- **判**：同一角色 ≥2 个实现 → 🟠，并指出该保留哪个（使用面最广、最完整的那个）。没有基础组件层、且**有界面控件的视图**（窗口、页面、面板）超过 5 个 → 🟠；渲染、动画、音频这类不产生控件的脚本不算视图。
-- **合并**：带控件的视图很少（≤2 个），且重复的其实是 1.1 同一批样式（两个窗口各抄一份按钮和输入框样式）时，根因相同，只在 1.1 报一条（仍按 🟠 计），1.2 写"见 1.1"；仍有独立问题（如 `$`/`el` 小助手、提示条多套）的，另按实际严重度写。
+### 1.2 ★ Shared Component Reuse
+- **Check**: Locate the base component directory (`components/ui`, `common`, `shared`, `DesignSystem`, `Views/Components`). List how many implementations exist for Button / Input / Select / Modal (Dialog/Sheet/Popup) / Card / Toast / Tabs / Empty / Loading. Then grep for raw usages bypassing base components (e.g., `<button className=…>` despite having a `Button` component; hand-rolled overlays despite having a shared `Sheet`).
+- **Verdict**: ≥2 implementations for the same role → 🟠, and specify which one to keep (the most widely used and complete one). No base component layer while the project has more than 5 **views containing UI controls** (windows, pages, panels) → 🟠; scripts for rendering, animation, or audio that produce no controls do not count as views.
+- **Merging**: When there are very few control-bearing views (≤2) and the duplication is actually the same batch of styles from 1.1 (two windows copying the same button/input styles), the root cause is identical—report one finding under 1.1 (still 🟠) and mark 1.2 `see 1.1`. If independent issues remain (e.g., duplicate `$`/`el` DOM helpers, multiple toast implementations), report them under 1.2 at their actual severity.
 
-### 1.3 ★ 交互模式一致
-- **查**：按"同一类用户意图"建一张对照表，每类列出所有出现的位置和用的控件/模式：
-  - 少量选项的单选（卡片单选 / 下拉 / 分段控件 / radio）
-  - 确认与危险操作（二次确认？撤销？）
-  - 加载态、空状态、错误提示（toast / 行内 / 弹窗）
-  - 表单校验时机、提交按钮禁用规则
-  - 导航与返回、快捷键、拖拽
-- **判**：同一类意图出现两种以上模式且无理由 → 🟠（列出对照表）。这类问题用户能直接感到"不高级"。
+### 1.3 ★ Consistent Interaction Patterns
+- **Check**: Build a comparison table grouped by "same user intent", listing every occurrence and the widget/pattern used:
+  - Small-set single choice (card selector / dropdown / segmented control / radio)
+  - Confirmation & destructive actions (double confirmation? undo?)
+  - Loading states, empty states, error feedback (toast / inline / modal)
+  - Form validation timing and submit-button disabled rules
+  - Navigation & back behavior, keyboard shortcuts, drag-and-drop
+- **Verdict**: Two or more patterns for the same user intent with no justification → 🟠 (include the comparison table). Users immediately feel this as "unpolished".
 
-### 1.4 文案、术语与内部代号
-- **查**：
-  - 同一概念在 UI 文案和代码命名里是否有多个名字（项目/工程/作品；导出/输出/渲染）
-  - **内部代号残留**：作者名字、旧项目名、旧产品名出现在数据模型的取值（枚举、role、字段值）、环境变量前缀、存储目录、ID 里。vibe 项目从别的仓库拆出或改名后最常见
-  - 项目若有 i18n，grep 绕过 i18n 的用户可见硬编码字符串
-- **判**：内部代号进了数据模型或校验逻辑（写错一个值就被静默拒收）→ 🟠；核心概念多名且会让 agent 建出两个不同模型 → 🟠；只是文案多名 → 🟡。
+### 1.4 Copy, Terminology & Internal Codenames
+- **Check**:
+  - Whether the same concept has multiple names across UI copy and code identifiers (e.g., project / workspace / work; export / output / render)
+  - **Residual internal codenames**: author names, old project names, or old product names inside data model values (enums, roles, field values), env var prefixes, storage directories, or IDs—very common after a vibe-coded project is split out of another repo or renamed
+  - If the project uses i18n, grep for user-visible hardcoded strings bypassing i18n
+- **Verdict**: Internal codenames baked into data models or validation logic (one typo causes silent rejection) → 🟠; multiple names for a core concept that could cause an agent to build two separate models → 🟠; inconsistent UI copy only → 🟡.
 
-### 1.5 多设备与尺寸适配
-- **查**：固定宽高、绝对定位、写死的窗口尺寸、没有断点 / Dynamic Type / 窗口缩放处理。挑 2–3 个主要页面读布局代码。体检只做静态阅读；需要实际打开应用验证时，把"去哪个页面、换什么尺寸、看什么"写进报告的"需要你决定的事"，由用户来跑。常用的实测尺寸：桌面 1366×768 @150% 缩放、1280×720、13 寸 MacBook 默认分辨率；手机 375×812。
-- **判**：主流程在常见的其他尺寸下会坏 → 🟠；局部 → 🟡。
+### 1.5 Multi-Device & Viewport Adaptation
+- **Check**: Fixed widths/heights, absolute positioning, hardcoded window sizes, missing breakpoints / Dynamic Type / window resize handling. Read layout code for 2–3 main pages. Checkups are static reads only; if launching the app is needed for live verification, put "which page to open, what sizes to test, and what to look for" into "Decisions Needed" for the user to run. Common test viewports: desktop 1366×768 at 150% scaling, 1280×720, 13-inch MacBook default resolution; mobile 375×812.
+- **Verdict**: Core flow breaks at other common sizes → 🟠; localized issues → 🟡.
 
-### 1.6 UI 规范文档
-- **查**：是否有设计规范文档（颜色、组件清单、交互约定），以及 agent 规则文件是否指向它。从中抽 3 个 token / 组件，核对代码是否一致。
-- **判**：没有文档但有 UI → 🟡（处方：从现有代码归纳出一份，作为唯一信息源，并在 AGENTS.md 指向它）。文档与代码不一致 → 按 3.2 处理（误导性文档可能是 🔴）。
+### 1.6 UI Specification Docs
+- **Check**: Whether a design spec exists (colors, component inventory, interaction conventions) and whether agent rule files point to it. Sample 3 tokens/components from the doc and verify they match the code.
+- **Verdict**: Has UI but no doc → 🟡 (prescription: extract one from current code as the single source of truth and link to it from `AGENTS.md`). Doc contradicts code → handle under 3.2 (misleading docs can be 🔴).
 
-### 1.7 ★ 架构模式一致（无 UI 项目也做）
-- **查**：同一类问题是否有多种解法并存：
-  - 状态管理（两套 store / Context 与全局单例混用）
-  - 网络请求（散落的 fetch + 封装的 client + 第三方库）
-  - 样式方案（CSS Modules + Tailwind + 内联 style 混用）
-  - 日期、校验、日志、配置读取、错误类型、持久化
-  - 目录约定：新功能应该放哪？现有功能是否按同一规则放？
-- **判**：同类多解且无迁移计划 → 🟠。处方要指定保留哪一种，并给一条规则写进 AGENTS.md。
+### 1.7 ★ Consistent Architectural Patterns (Applies to Non-UI Projects Too)
+- **Check**: Whether multiple solutions coexist for the same concern:
+  - State management (two stores / mixing Context with global singletons)
+  - Network requests (scattered raw `fetch` + custom client + third-party library)
+  - Styling approach (mixing CSS Modules + Tailwind + inline styles)
+  - Dates, validation, logging, config loading, error types, persistence
+  - Directory conventions: where should a new feature live? Do existing features follow the same rule?
+- **Verdict**: Multiple coexisting approaches with no migration plan → 🟠. The prescription must pick the single one to keep and provide a rule to add to `AGENTS.md`.

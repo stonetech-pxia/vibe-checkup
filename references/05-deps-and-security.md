@@ -1,53 +1,53 @@
-# 维度 5：依赖、许可证与安全
+# Dimension 5: Dependencies, Licenses & Security
 
-**病因**：AI 实现功能时默认"能跑就行"：密钥直接写进代码、鉴权只在前端做、数据库规则先全开、随手引一个没听过的包、把开源代码整段搬进来而不看协议。原型阶段问题不大，一旦有真实用户或开始商用，每一项都可能是事故。
+**Root cause**: AI optimizes for "make it run": dropping secrets straight into code, checking auth only on the frontend, leaving database rules wide open, pulling in unfamiliar packages on a whim, and pasting open-source code without checking its license. Harmless in a throwaway prototype; an incident waiting to happen once real users or commercial distribution arrive.
 
-（密钥脱敏规则见 `agent-brief.md` 纪律第 4 条。）
+(See `agent-brief.md` Discipline #4 for secret redaction rules.)
 
 ---
 
-### 5.1 ★ 密钥与凭据
-- **查**：
-  - scan §3（扫描 git 跟踪及未被忽略的文件，值已脱敏）
-  - `.env` 是否被忽略：`git check-ignore -v .env`
-  - git 历史中出现过的密钥：`git log --all -S "<可疑前缀>" --format="%h %ad %s"`（只列提交，不输出内容）。这条命令也会命中"按前缀识别服务商"的代码和测试里的假值，要打开命中的提交看匹配串：长度够不够真密钥、是不是 `test`/`fake`/`xxx` 之类的占位
-  - 进了客户端的服务端密钥：`NEXT_PUBLIC_*` / `VITE_*` / `EXPO_PUBLIC_*` 变量名里含 SECRET/KEY/TOKEN；Electron renderer、iOS/Android 包、浏览器扩展里的 API key
-- **判**：真实密钥在代码或历史里 → 🔴（处方：先吊销轮换，再清理；只从代码删掉不够）。服务端密钥进客户端 → 🔴。
+### 5.1 ★ Secrets & Credentials
+- **Check**:
+  - scan §3 (scans git-tracked and non-ignored files; values are already redacted)
+  - Whether `.env` is ignored: `git check-ignore -v .env`
+  - Secrets in git history: `git log --all -S "<suspicious_prefix>" --format="%h %ad %s"` (list commits only—do not print contents). This also matches provider-prefix detection code and dummy test values, so open matching commits to check whether the matched string has real-key length or is a placeholder like `test`/`fake`/`xxx`
+  - Server-side secrets leaked to clients: `NEXT_PUBLIC_*` / `VITE_*` / `EXPO_PUBLIC_*` variables containing `SECRET`/`KEY`/`TOKEN`; API keys bundled into Electron renderers, iOS/Android builds, or browser extensions
+- **Verdict**: Real secret in code or git history → 🔴 (prescription: revoke and rotate first, then scrub; merely deleting from code is insufficient). Server-side secret exposed to client → 🔴.
 
-### 5.2 ★ 认证与授权
-- **查**：后端路由/云函数是否都有鉴权；授权是否只在前端判断；按 id 取资源时有没有校验归属（IDOR）；Supabase RLS 是否开启、Firebase 规则是否 `if true`；管理接口、调试接口是否暴露。
-- **判**：有真实用户数据时任一缺口 → 🔴；原型阶段 → 🟠 并标注"上线前必须修"。
-- **桌面应用的本机接口**（本机 WebSocket/HTTP、IPC）另按这条判：只监听 127.0.0.1 且拒绝带 Origin 的请求是底线，缺了 → 🟠（任何网页都能调用）；底线有了但没有 token，本机其他进程能连上并读到截图、转写、文件这类敏感数据 → 🟡；监听 0.0.0.0 → 🔴。
-- **花钱的接口**：后端有没有代理 LLM、短信、邮件或其他按量付费第三方 API 的接口？它有没有鉴权和限流（按用户或 IP）？重试、轮询、agent 循环有没有次数上限？未鉴权、任何人都能调用的付费接口 → 已有外部用户 🔴，其他阶段 🟠 并标注"上线前必须修"；有鉴权但没有限流，或循环没有上限 → 🟡。
+### 5.2 ★ Authentication & Authorization
+- **Check**: Whether every backend route / cloud function enforces auth; whether authorization is checked only on the frontend; whether resource lookups by ID verify ownership (IDOR); whether Supabase RLS is enabled or Firebase rules are left as `if true`; whether admin or debug endpoints are exposed.
+- **Verdict**: Any gap involving real user data → 🔴; in `prototype` stage → 🟠 with note `must fix before launch`.
+- **Desktop app local endpoints** (local WebSocket/HTTP, IPC) follow this rule too: binding strictly to `127.0.0.1` and rejecting requests with an `Origin` header is the baseline—missing either → 🟠 (any web page can invoke it); baseline present but no auth token, allowing other local processes to connect and read sensitive data like screenshots, transcripts, or files → 🟡; binding to `0.0.0.0` → 🔴.
+- **Metered / paid endpoints**: Does the backend proxy LLMs, SMS, email, or other pay-per-use third-party APIs? Does it enforce auth and rate limiting (per user or IP)? Do retries, polling loops, and agent loops have upper bounds? Unauthenticated paid endpoint callable by anyone → 🔴 if external users exist, otherwise 🟠 with note `must fix before launch`; authenticated but no rate limit, or unbounded loops → 🟡.
 
-### 5.3 注入、危险 API、配置暴露与隐私
-- **查**：
-  - 注入：SQL 字符串拼接；`eval` / `exec` / `new Function`；`dangerouslySetInnerHTML` / `v-html` / `innerHTML` 接用户内容；用户输入拼进 shell 命令；文件路径未规范化；服务端按用户给的 URL 发请求
-  - Electron：`nodeIntegration: true`、`contextIsolation: false`、`webSecurity: false`
-  - **仅桌面外壳项目**（有 `BrowserWindow` / `preload` / `ipcMain`，或 `tauri.conf`；没有就跳过这一条，5.3 其余照查）：preload 是否把不限通道的 `send` / `on` 暴露给页面（应按通道名白名单）；有没有 `setWindowOpenHandler`、`will-navigate` 之类的导航守卫；窗口是否只加载本地内容。通用 IPC 桥且只加载本地内容 → ⚪；会加载外部页面或用户内容却没有守卫 → 🟠。
-  - 配置：带凭据的 `*` CORS；生产开着 debug；把堆栈直接返回客户端；默认口令；公开可写的存储桶
-  - 隐私：日志里的个人信息、token、完整请求体；未经同意的遥测；敏感数据明文存本地
-- **判**：用户输入可达或涉及真实用户数据 → 🔴/🟠；仅内部可信输入或原型阶段 → 🟡。
+### 5.3 Injection, Dangerous APIs, Misconfiguration & Privacy
+- **Check**:
+  - Injection: SQL string concatenation; `eval` / `exec` / `new Function`; `dangerouslySetInnerHTML` / `v-html` / `innerHTML` with user input; interpolating user input into shell commands; unnormalized file paths; server-side requests to user-supplied URLs (SSRF)
+  - Electron: `nodeIntegration: true`, `contextIsolation: false`, `webSecurity: false`
+  - **Desktop shell projects only** (has `BrowserWindow` / `preload` / `ipcMain`, or `tauri.conf`; skip this sub-check otherwise and still check the rest of 5.3): does `preload` expose unrestricted `send`/`on` to the renderer (should allowlist channel names)? Are navigation guards like `setWindowOpenHandler` and `will-navigate` in place? Do windows load only local content? Generic IPC bridge loading only local content → ⚪; loading external pages or user content without guards → 🟠.
+  - Configuration: `*` CORS with credentials; debug mode on in production; raw stack traces returned to clients; default passwords; publicly writable storage buckets
+  - Privacy: PII, tokens, or full request bodies in logs; unconsented telemetry; sensitive data stored locally in plaintext
+- **Verdict**: Reachable by user input or involving real user data → 🔴/🟠; trusted internal input only or `prototype` stage → 🟡.
 
-### 5.4 ★ 依赖健康
-- **查**：
-  - 依赖数量（scan §0 列出各 package.json）；同一角色的多个库（axios + ky + 自写 fetch 封装；moment + dayjs；两个 UI 库）→ 与 1.7 是同一根因时只记一处
-  - 未使用依赖：**已安装时**运行 `npx --no-install depcheck` 或 `npx --no-install knip`
-  - **幻觉包/抢注包**：不熟悉的包名逐个核实存在且有正常下载量（`npm view <pkg> name version`、`pip index versions <pkg>`，只读查询），名字与知名包只差一两个字母的重点看
-  - 已知漏洞：`npm audit --omit=dev`、`osv-scanner --lockfile=<lockfile>` 都要联网查询漏洞库，属于"需批准"；子 agent 写 `需批准，未执行`。`pip-audit` 不带参数只审计当前 Python 环境而不是项目，带 `-r` 会建临时环境并安装依赖，所以要先问用户
-  - lockfile 是否提交；是否混用多个包管理器（scan §0）
-- **判**：可疑包 → 🔴；高危漏洞在运行时依赖 → 🟠；同角色多库 → 🟡/🟠；未使用依赖 → 🟡。
+### 5.4 ★ Dependency Health
+- **Check**:
+  - Dependency count (scan §0 lists every `package.json`); multiple libraries serving the same role (`axios` + `ky` + custom `fetch` wrapper; `moment` + `dayjs`; two UI libraries) → if the same root cause as 1.7, score in one place only
+  - Unused dependencies: **when already installed**, run `npx --no-install depcheck` or `npx --no-install knip`
+  - **Hallucinated / typosquatted packages**: verify unfamiliar package names exist and have normal download volume (`npm view <pkg> name version`, `pip index versions <pkg>`—read-only lookups), paying extra attention to names 1–2 characters off from popular packages
+  - Known vulnerabilities: `npm audit --omit=dev` and `osv-scanner --lockfile=<lockfile>` query online vulnerability databases and require approval; sub-agents mark `needs approval, not run`. `pip-audit` without flags audits the current Python environment rather than the project, and with `-r` creates a temp environment and installs packages—so always ask the user first
+  - Whether lockfiles are committed; whether multiple package managers are mixed (scan §0)
+- **Verdict**: Suspicious package → 🔴; high-severity vulnerability in runtime dependencies → 🟠; duplicate libraries for same role → 🟡/🟠; unused dependencies → 🟡.
 
-### 5.5 ★ 许可证合规
-- **查**：scan §8（它只读得到 JS 依赖的协议；标了 `NOT checked` 的清单——Python、Rust、Go 等——要另查：已装 `pip-licenses` / `cargo license` / `go-licenses` 时只读运行，没装就对清单里的直接依赖逐个核对。没核对过就不能写"通过"）；项目自身 LICENSE；runtime 依赖和整段搬入的代码（scan §0 列出的第三方目录、从开源项目复制的文件——看文件头版权注释）的协议。
-  - **MIT / Apache-2.0 / BSD**：可修改可商用，但要保留原版权声明（看有无 THIRD_PARTY_NOTICES 或等效）
-  - **GPL**：基于它的衍生作品分发时必须同样开源
-  - **AGPL**：通过网络提供服务也触发开源义务
-  - **SSPL / BUSL / CC-BY-NC / Commons Clause**：非开源或限制商用
-- **判**：闭源或商用项目里含 GPL/AGPL/SSPL 代码 → 🔴（交给用户决策：替换、隔离为独立进程，或开源）。宽松协议缺版权声明 → 🟡。阶段与商业意图不确定时，写进报告"需要你决定的事"。
-  - **宽松协议开源项目 + 可选的 GPL 组件**：组件不在仓库里、由用户自己安装、以独立进程调用，且在 NOTICES 里写明 → 通过；仓库里有直接 import 它的代码 → 写明"这部分与 GPL 组件组合分发时按 GPL"即可，⚪。
-  - **AI 生成的素材**（TTS 音频、生成图片、模型贴图、音色参考）随项目发布时：授权取决于生成工具的套餐条款（有的免费档禁止商用或要求署名）。查不到来源 → 列进"需要你决定的事"，⚪。
+### 5.5 ★ License Compliance
+- **Check**: scan §8 (it only inspects JS dependency licenses; for manifests flagged `NOT checked`—Python, Rust, Go, etc.—check separately: run `pip-licenses` / `cargo license` / `go-licenses` read-only if installed, otherwise verify direct dependencies from the manifest one by one; never mark `pass` without checking); the project's own LICENSE; licenses of runtime dependencies and pasted open-source code (third-party directories listed in scan §0 and copied files—check file-header copyright notices).
+  - **MIT / Apache-2.0 / BSD**: modifiable and commercially usable, but original copyright notices must be preserved (check for `THIRD_PARTY_NOTICES` or equivalent)
+  - **GPL**: distributing derivative works requires open-sourcing under the same license
+  - **AGPL**: serving over a network also triggers open-source obligations
+  - **SSPL / BUSL / CC-BY-NC / Commons Clause**: non-OSS or restricts commercial use
+- **Verdict**: GPL/AGPL/SSPL code in a closed-source or commercial project → 🔴 (send to user to decide: replace, isolate in a separate process, or open-source). Permissive licenses missing copyright notices → 🟡. If project stage or commercial intent is unclear, list in "Decisions Needed".
+  - **Permissive open-source project + optional GPL component**: component is not in the repo, installed by the user, invoked as a separate process, and documented in NOTICES → pass; repo directly imports it → note "combining and distributing with the GPL component triggers GPL", ⚪.
+  - **AI-generated assets** (TTS audio, generated images, model textures, voice references) bundled with the project: rights depend on the generator's plan terms (some free tiers forbid commercial use or require attribution). If provenance cannot be verified → list in "Decisions Needed", ⚪.
 
-### 5.6 重复造轮子
-- **查**：核心而棘手的问题是否从零自写，而成熟库早已解决：时区与日期、CSV/Excel 解析、富文本、音视频编解码、加密、鉴权、拖拽、虚拟列表。反过来：所用框架已提供的能力（路由、状态、表单、缓存）是否被绕开自写。
-- **判**：自写的部分正是 bug 热点（对照 6.8）→ 🟠；否则 🟡。成熟开源项目里那些"不符合直觉"的写法往往是在兜某个罕见问题，自写版本会全部重新踩一遍。
+### 5.6 Reinventing the Wheel
+- **Check**: Whether notoriously tricky core problems are hand-rolled from scratch despite mature libraries: timezones & dates, CSV/Excel parsing, rich text, audio/video codecs, cryptography, auth, drag-and-drop, virtualized lists. Conversely, whether built-in capabilities of the chosen framework (routing, state, forms, caching) are bypassed and reimplemented.
+- **Verdict**: Hand-rolled implementation is also a bug hotspot (cross-check 6.8) → 🟠; otherwise 🟡. Counterintuitive code in mature open-source libraries usually guards against rare edge cases; hand-rolled versions step on every single one again.

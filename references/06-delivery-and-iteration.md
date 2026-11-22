@@ -1,66 +1,66 @@
-# 维度 6：交付与迭代治理
+# Dimension 6: Delivery & Iteration Governance
 
-**病因**：项目能跑之后，风险转移到"怎么改"和"怎么发"。只写在文档里的发版流程，AI 会漏步骤；没有 tag 和保留的旧版本，出事回不去；桌面端发出一个一打开就崩的版本，用户根本不知道该去官网下新版。另一个隐形成本是**原地打转**：某个 bug 被 AI 修了好几轮还没好，每一轮都叠一层补丁。
+**Root cause**: Once a project runs, risk shifts to *how it changes* and *how it ships*. Release checklists that exist only in prose get skipped by AI; without tags and retained prior builds, you cannot roll back when something breaks; if a desktop app ships a crash-on-launch build, users have no idea they need to visit the website for a fix. Another hidden cost is **spinning in circles**: a bug AI has patched round after round without fixing, stacking workaround on workaround.
 
-**原则**：能用程序强制的，别只靠文档；关键流程要有退路；修不好的问题要及时止损。
+**Principle**: Enforce with code whatever can be enforced; keep an escape hatch on critical flows; cut losses early on stuck bugs.
 
-**6.3–6.6 是发布类检查项**：只对"准备发布"和"已发布"做，其他阶段记不适用；"准备发布"的严重度比下面写的低一级，并写明"发布后升级为 X"（见 `agent-brief.md` 纪律第 3 条）；条目里已单独写出"准备发布"判法的，按条目。按分发方式解读：
-- 安装包/二进制：发版 = 构建、签名、上传；更新 = 自动更新或应用内提示；兜底 = 崩溃上报 + 安全模式
-- 托管服务：发版 = 部署；更新 = 用户无感；兜底 = 回滚部署 + 功能开关
-- **用户从源码运行**（git clone）：发版 = 打 tag + 写 CHANGELOG；更新 = `git pull` 之后依赖、子模块、构建产物能否自动同步（启动时比对版本或时间戳）；兜底 = 本地数据（配置、记忆、缓存）损坏时能否带着提示启动，而不是直接崩
+**Items 6.3–6.6 are release checks**: run only for `pre-release` and `released`, and mark `N/A` for other stages. For `pre-release`, downgrade severities below by one level and note `upgrades to X after release` (see `agent-brief.md` Discipline #3); where an item explicitly defines a `pre-release` verdict, follow that item. Interpret by distribution method:
+- **Installer / binary**: release = build, sign, upload; update = auto-update or in-app prompt; safety net = crash reporting + safe mode
+- **Hosted service**: release = deploy; update = transparent to users; safety net = deployment rollback + feature flags
+- **Run from source (`git clone`)**: release = git tag + CHANGELOG; update = whether dependencies, submodules, and build artifacts sync automatically after `git pull` (e.g., version/timestamp check at startup); safety net = whether the app boots with a clear warning when local data (config, memory, cache) is corrupted instead of crashing outright
 
 ---
 
-### 6.1 ★ Git 基础
-- **查**：scan §7：是否 git 仓库；提交粒度（超大提交占比）；含糊的提交信息；被跟踪的构建产物/日志/本地数据库；`.gitignore` 覆盖面。另查：
-  - **远程备份**：`git remote -v` 是否为空；有远程时 `git status -sb` 看是否有大量未推送的提交
-  - **未提交的改动**：涉及核心流程、或改动量超过近期单次提交的常见规模、或放了一天以上（看未跟踪文件的修改时间），都算"长期未提交"
-- **判**：核心改动未提交且没有远程备份 → 🟠（一次误操作或一块坏盘就全丢）。scan §0/§7 写的是 "not a git repository" 才算不是仓库 → 🔴（没有历史就没有回滚，agent 改坏了无法恢复）。写的是 "GIT ERROR" / "git failed" 时是 git 本身出错（如权限、safe.directory），不扣分，交给主流程处理。大量未提交改动长期堆积 → 🟠。提交含糊、粒度过大 → 🟡（出问题时无法二分定位）。
+### 6.1 ★ Git Fundamentals
+- **Check**: scan §7: whether it is a git repo; commit granularity (share of oversized commits); vague commit messages; tracked build artifacts/logs/local databases; `.gitignore` coverage. Also check:
+  - **Remote backup**: whether `git remote -v` is empty; if a remote exists, run `git status -sb` to check for large numbers of unpushed commits
+  - **Uncommitted changes**: changes touching core flows, exceeding typical recent commit size, or sitting around for more than a day (check untracked file mtimes) all count as "long-standing uncommitted changes"
+- **Verdict**: Core changes uncommitted with no remote backup → 🟠 (one misstep or dying drive loses everything). Only when scan §0/§7 says `not a git repository` does it count as not a repo → 🔴 (no history means no rollback if an agent breaks things). When it says `GIT ERROR` / `git failed`, git itself errored (e.g., permissions, `safe.directory`)—do not deduct points; escalate to the main agent. Large pileup of long-standing uncommitted changes → 🟠. Vague commits or oversized commits → 🟡 (cannot `git bisect` when regressions hit).
 
-### 6.2 分支与并行开发
-- **查**：是否所有功能都直接在主分支上开发；有没有用分支或 worktree 并行；已合并却没删的分支、遗留的 worktree（`git branch --merged`、`git worktree list`，看最后提交日期）。
-- **判**：并行做多个功能却只用主分支 → 🟡。遗留分支/worktree 大量堆积 → ⚪/🟡。
+### 6.2 Branching & Parallel Development
+- **Check**: Whether all features are developed straight on the main branch; whether branches or worktrees are used for parallel work; unpruned merged branches or stale worktrees (`git branch --merged`, `git worktree list`, checking last commit dates).
+- **Verdict**: Developing multiple features in parallel directly on main → 🟡. Large pileup of stale branches/worktrees → ⚪/🟡.
 
-### 6.3 发布流程文档（发布类）
-- **查**：有没有写下来的发版流程：版本号、changelog、测试、构建、签名/公证、上传、官网/商店更新。**版本号是否唯一来源**：比对 package.json / Info.plist / build.gradle / pyproject / 官网或下载页里的版本是否一致。
-- **判**：无发版文档 → 🟡；版本号多处手工维护且已不一致 → 🟠。
+### 6.3 Release Process Docs (Release Check)
+- **Check**: Whether a documented release process exists: version bump, changelog, tests, build, signing/notarization, upload, website/store updates. **Single source of truth for version number**: verify version consistency across `package.json` / `Info.plist` / `build.gradle` / `pyproject.toml` / website or download page.
+- **Verdict**: No release doc → 🟡; version maintained manually in multiple places and already out of sync → 🟠.
 
-### 6.4 ★ 硬闸门（发布类）
-- **查**：流程中哪些步骤由程序强制：pre-commit / pre-push hook、CI 检查、发版脚本（未跑测试、版本号未更新、changelog 缺失就拒绝继续）。scan §0 列出了 CI 和 hook 的存在情况；打开看它们实际检查什么。
-- **判**：只有文档没有任何程序闸门 → 🟠（AI 一定会在某次漏步骤）。有闸门但被绕开（`--no-verify` 出现在脚本或规则里）→ 🟠。
+### 6.4 ★ Hard Gates (Release Check)
+- **Check**: Which workflow steps are enforced programmatically: pre-commit / pre-push hooks, CI checks, release scripts (refusing to proceed if tests haven't run, version wasn't bumped, or changelog is missing). scan §0 lists detected CI and hooks; open them to see what they actually check.
+- **Verdict**: Docs only with zero programmatic gates → 🟠 (AI will inevitably skip a step). Gates exist but are bypassed (`--no-verify` in scripts or rules) → 🟠.
 
-### 6.5 ★ 回滚能力（发布类）
-- **查**：每个发布版本是否打 tag；旧版本构建产物是否保留可重新分发；数据库迁移是否可逆；有没有远程配置/功能开关能在不发版的情况下关掉某功能；服务端能否一键重部署上一版。**本地数据格式**（配置、存档、本地数据库、缓存）有没有版本号；新版本读到旧版本写下的数据时，是迁移、兼容读取，还是报错或静默重置。
-- **判**：出了问题无法在 1 小时内回到上一版 → 🔴（有付费或大量用户）/ 🟠。升级后旧数据读不了或被静默重置 → 🔴（丢用户数据）/ 🟠（可重建的缓存）。
+### 6.5 ★ Rollback Capability (Release Check)
+- **Check**: Whether every release is tagged; whether prior build artifacts are retained for redistribution; whether database migrations are reversible; whether remote config / feature flags can disable a feature without a new release; whether servers can one-click redeploy the previous version. **Local data formats** (config, saves, local DBs, caches): are they versioned? When a new version reads data written by an older version, does it migrate, read compatibly, error out, or silently reset?
+- **Verdict**: Cannot revert to the previous version within 1 hour during an incident → 🔴 (paid or large user base) / 🟠. Upgrade makes old data unreadable or silently resets it → 🔴 (user data loss) / 🟠 (rebuildable cache).
 
-### 6.6 ★ 崩溃兜底与安全模式（发布类；客户端应用）
-- **查**：
-  - 是否有崩溃上报
-  - 启动崩溃循环检测：连续启动失败后是否进入**安全模式**——禁用插件/重置可疑配置，至少能弹窗告诉用户如何更新或恢复
-  - 安全模式本身是否极简、不依赖主流程的模块（它必须自己不会崩）
-  - 是否有自动更新或应用内更新提醒
-  - Web 应用：错误边界、维护页、前端版本不一致时的刷新提示
-- **判**：客户端应用一旦发出启动即崩的版本，用户没有任何自救路径 → 🔴。有兜底但安全模式与主流程共享大量代码 → 🟡。
-- **用户从源码运行**（没有安装包、崩溃上报、自动更新，按"按分发方式解读"一节只查本地数据）：配置、记忆、存档、缓存这类本地文件损坏就启动即崩、用户只能手动找文件修 → 已发布 🟠，**准备发布 🟡（发布后升级为 🟠）**；坏文件会被静默覆盖而丢数据 → 同样处理，并同时记入 2.5；损坏时隔离坏文件、用默认值带提示启动 → 通过。逐个核对读取这些文件的入口是否裸 `JSON.parse`，别只看一个（设置文件处理好了，记忆和提醒仍可能漏）。
+### 6.6 ★ Crash Safety Net & Safe Mode (Release Check; Client Apps)
+- **Check**:
+  - Crash reporting in place
+  - Startup crash-loop detection: after consecutive startup failures, does the app enter **safe mode**—disabling plugins / resetting suspect config, or at minimum showing a dialog telling the user how to update or recover?
+  - Is safe mode minimal and decoupled from main-flow modules (so it cannot crash itself)?
+  - Auto-update or in-app update reminder
+  - Web apps: error boundaries, maintenance page, refresh prompt on frontend version mismatch
+- **Verdict**: Client app with no user self-recovery path if a crash-on-launch build ships → 🔴. Safety net exists but safe mode shares heavy code with the main flow → 🟡.
+- **Run from source** (no installer, crash reporting, or auto-update; per the distribution-method guide above, inspect local data only): corrupted local files (config, memory, saves, cache) cause a crash on launch requiring manual file repair → `released` 🟠, **`pre-release` 🟡 (upgrades to 🟠 after release)**; corrupted files silently overwritten causing data loss → same verdict, and also record under 2.5; quarantines the bad file and boots with defaults plus a warning → pass. Check every loader for bare `JSON.parse`—do not stop after checking just one (settings may be safe while memory or reminders are not).
 
-### 6.7 可观测性
-- **查**：日志是否带足够上下文（请求 id、版本号、关键参数）；能否根据用户反馈复现问题；错误上报覆盖前后端。
-- **判**：已发布却完全没有错误上报 → 🟠；其余 🟡。
+### 6.7 Observability
+- **Check**: Do logs carry enough context (request ID, version, key parameters)? Can issues be reproduced from user reports? Does error reporting cover both frontend and backend?
+- **Verdict**: Released with zero error reporting → 🟠; otherwise 🟡.
 
-### 6.8 ★ 疑难 bug 止损
-- **查**：scan §7 反复修复热点（已只统计代码文件、且至少 2 次修复类提交）。对排名前 3–5 的文件看 `git log --oneline --follow -- <file> | head -30`，找 修→修→回滚→再修 的循环。在代码里找原地打转的迹象：层层叠加的 workaround、"临时"注释、`setTimeout`/`sleep` 补时序、多重重试、同一问题多个 flag。区分**补时序**和**正常计时**：等待的东西本来有完成信号（事件、Promise、回调、文件锁）却用固定延时去等，是补时序；UI 动画、防抖、节流、带注释说明"没有可等的信号"的轮询，是正常计时。只有一层、有注释的延时不算打转。
-- **判**：存在打转循环 → 🟠。处方不是"再修一次"，而是写进报告的**人工决策项**：
-  1. 停止打补丁；让两个强模型各自独立定位根因并给出置信度；
-  2. 置信度都在 ~90% 以上且结论一致 → 按其方案根治；
-  3. 都在 ~60% 以下 → 这个功能可能本身很难实现：砍掉，或换一种方式满足同一个用户需求。AI 都难以定位的 bug，上线后的维护负担也会很高。
+### 6.8 ★ Bug-Churn Stop-Loss
+- **Check**: scan §7 fix-churn hotspots (already restricted to code files with ≥2 fix commits). For the top 3–5 files, run `git log --oneline --follow -- <file> | head -30` to look for fix → fix → revert → fix loops. Inspect the code for signs of spinning in circles: layered workarounds, "temporary" comments, `setTimeout`/`sleep` timing hacks, stacked retries, multiple flags for the same bug. Distinguish **timing hacks** from **legitimate timers**: using a fixed delay to wait for something that has a real completion signal (event, Promise, callback, file lock) is a timing hack; UI animations, debounce, throttle, or polling with a comment explaining "no waitable signal exists" are legitimate timers. A single commented delay is not spinning.
+- **Verdict**: Active churn loop → 🟠. The prescription is not "try fixing it again", but a **human decision item** in the report:
+  1. Stop patching; have two strong models independently diagnose the root cause and state their confidence;
+  2. Both ≥ ~90% confident and in agreement → fix the root cause per their plan;
+  3. Both ≤ ~60% confident → the feature itself may be inherently intractable: cut it, or solve the underlying user need a different way. A bug AI struggles to diagnose will stay an ongoing maintenance burden after release.
 
-### 6.9 环境隔离
-- **查**：开发/测试/生产配置是否分离；测试是否可能打到生产服务或生产数据；开发构建是否使用独立的数据目录、bundle id、端口，避免与日常使用的正式版本互相污染；桌面应用能否以后台/测试模式运行。**多个工作树并行开发时**（`git worktree list`），各工作树启动的应用是否共用同一份用户数据目录、端口、单实例锁——共用就会互相改写设置，且不能同时运行。
-- **判**：测试或开发构建可能写坏真实数据 → 🟠/🔴；配置混杂 → 🟡。
+### 6.9 Environment Isolation
+- **Check**: Are dev/test/prod configs separated? Could tests hit production services or data? Do dev builds use separate data directories, bundle IDs, and ports so they do not pollute the daily-driver release build? Can desktop apps run in background/test mode? **When developing in parallel with multiple worktrees** (`git worktree list`), do app instances launched from different worktrees share the same user data directory, port, or single-instance lock—which causes them to overwrite each other's settings and prevents running concurrently?
+- **Verdict**: Tests or dev builds could corrupt real data → 🟠/🔴; tangled configs → 🟡.
 
-### 6.10 新环境能否跑起来
-- **查**：下一个 agent 在新的工作树或新机器上，能不能照文档把项目跑起来。
-  - scan §0 "env vars read in code"：代码读了、但 env 示例文件和文档里都没提到的环境变量。逐个确认是必填还是有默认值
-  - 运行时版本有没有固定（`.nvmrc` / `engines` / `.python-version` / `requires-python` / `rust-toolchain`）
-  - README 或规则文件里的安装与启动步骤是否完整（只核对步骤与文件、脚本对不对得上，不运行）
-- **判**：必填的环境变量没有任何地方说明 → 🟡；"准备发布 / 已发布"且用户从源码运行 → 🟠（用户照 README 跑不起来）。没有 env 示例文件但变量都有默认值 → 通过。运行时版本未固定 → ⚪。
+### 6.10 Fresh-Environment Runnability
+- **Check**: Whether the next agent in a fresh worktree or on a fresh machine can get the project running by following the docs.
+  - scan §0 "env vars read in code": env vars read by code that appear in neither env example files nor docs. Check each to see if it is required or has a default
+  - Whether runtime versions are pinned (`.nvmrc` / `engines` / `.python-version` / `requires-python` / `rust-toolchain`)
+  - Whether install and startup steps in README or rule files are complete (verify steps match files/scripts—do not execute)
+- **Verdict**: Required env vars undocumented anywhere → 🟡; `pre-release` / `released` with `run from source` → 🟠 (users cannot run the project from README). No env example file when all variables have defaults → pass. Unpinned runtime version → ⚪.

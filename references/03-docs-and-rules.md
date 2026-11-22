@@ -1,57 +1,57 @@
-# 维度 3：文档与规则
+# Dimension 3: Docs & Rules
 
-**病因**：AI 爱写方案，人也会要求它写方案。功能迭代后，AI 不会主动回头改旧文档，于是仓库里堆满过期的方案、计划、笔记。**错误的文档比没有文档更可怕**：没有文档，agent 会去读代码；有错误文档，agent 可能不再核对代码，直接照旧信息实现，在后续功能里埋下人很难发现的暗坑。
+**Root cause**: AI loves writing proposals, and humans ask for them too. As features evolve, AI does not go back to update old docs, leaving the repo cluttered with expired proposals, plans, and notes. **Wrong docs are far worse than no docs**: with no docs, an agent reads the code; with wrong docs, an agent may skip verifying the code and build directly on stale facts, planting subtle bugs in downstream features.
 
-规则文件（AGENTS.md / CLAUDE.md 等）是同一个问题的另一面：它每轮都在 agent 的上下文里，写错一条就每次都错，漏写一条就每次都踩。
+Rule files (`AGENTS.md` / `CLAUDE.md`, etc.) are the flip side of the same coin: they sit in the agent's context on every turn, so one wrong rule causes repeated mistakes, and one missing rule causes repeated regressions.
 
 ---
 
-### 3.1 ★ 文档清单与分类
-- **查**：列出所有 md/mdx/rst 文档，按用途分类：
-  - **现行规范**（README、架构说明、设计规范、API 说明、agent 规则）：必须与代码一致
-  - **决策记录**（为什么选 A 不选 B）：长期有价值，内容应短
-  - **方案/计划**（某功能的实现方案、TODO、迁移计划）：功能完成后就该归档或删除
-  - **调研笔记、过程日志**：通常不该留在主干
-  scan §5 列出方案类文档、"最后改动比代码旧 30 天以上"的文档，以及**规则文件要求读、但被 git 忽略的文档**（只在作者本机，没有版本历史，最容易过期）。这些被忽略的文档也要逐份分类。
-- **判**：已完成功能的方案文档仍躺在活跃目录且被规则文件或 README 引用 → 🟠；没被引用 → 🟡。处方：把其中仍有效的决策提炼进现行文档，其余删除或移入 `docs/archive/`（并在规则里写明 agent 不读 archive）。
+### 3.1 ★ Doc Inventory & Classification
+- **Check**: List all `.md`/`.mdx`/`.rst` docs and classify by purpose:
+  - **Active specs** (README, architecture guides, design specs, API docs, agent rules): must match code
+  - **Decision records** (why A was chosen over B): long-term value, should stay concise
+  - **Proposals / plans** (feature implementation plans, TODOs, migration plans): should be archived or deleted once shipped
+  - **Research notes & process logs**: generally should not remain on the main branch
+  scan §5 lists plan-style docs, docs last modified >30 days before the latest code commit, and **git-ignored docs referenced by rule files** (local to the author's machine with no version history, making them the easiest to go stale). Classify every ignored doc too.
+- **Verdict**: Completed-feature proposals still sitting in active directories and linked from rule files or README → 🟠; unlinked → 🟡. Prescription: distill still-valid decisions into active docs, then delete the rest or move them to `docs/archive/` (and state in rules that agents must not read `archive`).
 
-### 3.2 ★ 文档-代码一致性（本维度最重要）
-- **查**：
-  1. scan §5 "docs citing code/doc paths that exist nowhere" 逐个确认（已跳过代码块、占位符和被 git 忽略的生成物，但仍可能是运行时才生成的输出路径，要分辨）。
-  2. 对每份**现行规范**文档，抽 3–5 条可验证的具体陈述（文件位置、函数/类名、命令、配置键、技术栈、数据流、目录约定），逐条到代码里核对。
-  3. 重点核对 agent 规则文件和 README 里的命令：对照 package.json scripts / Makefile / 实际文件确认存在（只核对存在性，不运行）。
-- **判**：
-  - 🔴：agent 会读到的文档里，有与代码矛盾、**且照做会把核心流程或架构带错**的陈述（例如说数据存在 A，实际在 B；说用 X 框架，实际已换成 Y）。如果每轮都加载的规则文件（AGENTS.md 等）或被改文件自己的开头说明**明确写了正确的规则**，足以抵消这条错误陈述，降为 🟠，并在证据里写出是哪一行抵消的。**通用的"文档与代码冲突时以代码为准"单独不够**（它没说哪一条对）；要有对该条陈述所涉事实的正面说明才算抵消。只抵消了一部分陈述时，按没被抵消的那部分判级，写明哪些被抵消、哪些没有；判不准的写"降级存疑"，并列进报告的"需要你决定的事"。
-  - 🟠：agent 会读到的文档里，有多处过期的路径、命令、名称，照做会浪费时间但不至于写错架构。
-  - 🟡：单个过期路径，或不太会被读到的文档过期。
-  - 每条都写成"文档说 X，代码是 Y"。
+### 3.2 ★ Doc–Code Consistency (Most Important Item in This Dimension)
+- **Check**:
+  1. Verify every item in scan §5 "docs citing code/doc paths that exist nowhere" (fenced code blocks, placeholders, and git-ignored build artifacts are already skipped, though some paths may still be runtime-generated outputs—distinguish them).
+  2. For every **active spec** doc, sample 3–5 concrete verifiable claims (file locations, function/class names, commands, config keys, tech stack, data flow, directory conventions) and verify each against the code.
+  3. Carefully verify commands in agent rule files and README against `package.json` scripts, `Makefile`, or actual files (check existence only—do not execute).
+- **Verdict**:
+  - 🔴: A doc that agents will read contains a statement contradicting code **that, if followed, will misdirect a core flow or architecture** (e.g., says data lives in A when it lives in B; says framework X is used after migrating to Y). If an always-loaded rule file (`AGENTS.md`, etc.) or the header comment of the modified file itself **explicitly states the correct rule** strongly enough to neutralize the wrong claim, downgrade to 🟠 and cite the exact neutralizing line in Evidence. **A generic "code takes precedence over docs" disclaimer alone is not enough** (it does not say which fact is right); only an affirmative statement about the specific fact neutralizes it. If only part of a wrong doc is neutralized, score based on the un-neutralized portion and note which parts are covered vs. not; if uncertain, mark `downgrade uncertain` and add it to "Decisions Needed".
+  - 🟠: A doc that agents will read has multiple stale paths, commands, or names that waste time without breaking architecture.
+  - 🟡: A single stale path, or staleness in a doc rarely read by agents.
+  - Phrase every finding as "doc says X, code does Y".
 
-### 3.3 ★ Agent 规则文件质量
-- **查**：AGENTS.md / CLAUDE.md / GEMINI.md / .cursorrules / .cursor/rules / copilot-instructions，以及子目录里的同类文件（scan §5 列出）。
-  - **副本**：多份规则文件或 skill 之间是同步机制（软链、include、生成脚本）还是各写各的？scan §4 "mirrored directory pairs" 会列出整目录镜像（如 `.claude/skills` ≡ `.agents/skills`）。手工维护的副本迟早不一致。
-  - **长度**：超过 ~300 行注意力会被摊薄，长会话中遵循度下降更明显；看哪些内容应下沉到被指向的文档，最关键的规则是否放在最前面。
-  - **空话**：模型默认就会做的事（"写干净的代码""注意性能"）不改变行为，只占上下文。
-  - **必备项**：怎么跑**局部**测试；token 与通用组件在哪（唯一信息源路径）；目录约定；已知高频坑；文档维护规则（改了行为要同步改哪份文档）；review 关注点。
-- **判**：项目已有一定规模却没有任何规则文件 → 🟠。规则指向不存在的东西或与代码矛盾 → 按 3.2 定级。手工维护的副本已经不一致 → 🟠，仍一致 → 🟡。缺必备项 → 🟡/🟠。空话多 → ⚪。
+### 3.3 ★ Agent Rule File Quality
+- **Check**: `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` / `.cursorrules` / `.cursor/rules` / `copilot-instructions`, plus nested rule files in subdirectories (listed in scan §5).
+  - **Duplicates**: Are multiple rule files or skill directories kept in sync via symlinks, includes, or a generator script, or maintained separately by hand? scan §4 "mirrored directory pairs" flags mirrored trees (e.g., `.claude/skills` ≡ `.agents/skills`). Hand-maintained copies inevitably drift.
+  - **Length**: Beyond ~300 lines, attention gets diluted and adherence drops sharply in long sessions; check what should be pushed down into linked docs and whether the most critical rules sit at the top.
+  - **Fluff**: Instructions models already follow by default ("write clean code", "pay attention to performance") do not change behavior—they only eat context.
+  - **Essentials**: How to run **scoped** tests; paths to single sources of truth (tokens, shared components); directory conventions; known recurring pitfalls; doc maintenance rules (which doc to update when behavior changes); review focus areas.
+- **Verdict**: Non-trivial project with no rule files at all → 🟠. Rules pointing to nonexistent targets or contradicting code → grade per 3.2. Hand-maintained copies that have already drifted → 🟠; still identical → 🟡. Missing essentials → 🟡/🟠. Heavy fluff → ⚪.
 
-### 3.4 ★ 踩坑与规则对照（本维度内）
-- **查**：scan §7 的反复修复热点文件，以及本维度发现的问题，逐一对照规则文件：有没有一条规则在防这个坑？热点按文件统计，抓不到"一次提交修了多处同类问题"的坑，所以还要读最近 30 条提交说明，找"修审查发现的问题""统一…""所有…都…"这类一次修多处的提交，看它修的是哪一类坑。另看是否有 review 清单（review.md 或规则文件中的 review 节）。
-- **判**：反复修复的热点没有对应规则 → 🟠。为每个缺口起草一条规则交给主流程。（跨维度的复发模式由主流程第 3 步汇总，不在这里做。）
+### 3.4 ★ Pitfalls vs. Rule Coverage (Within This Dimension)
+- **Check**: Cross-check scan §7's fix-churn hotspot files and findings from this dimension against the rule files: is there a rule preventing each pitfall? Per-file churn misses pitfalls fixed across many files in a single commit, so also read the last 30 commit messages looking for sweep fixes ("fix review issues", "unify…", "all X should…") to identify what class of mistake was being cleaned up. Also check whether a review checklist exists (`review.md` or a review section in the rule file).
+- **Verdict**: Recurring fix hotspots with no corresponding rule → 🟠. Draft one rule per gap for the main agent. (Cross-dimension recurring patterns are aggregated by the main agent in Step 3, not here.)
 
-### 3.5 文档入口与孤儿
-- **查**：README / 规则文件是否指向了 agent 需要的文档（架构、设计规范、发布流程）。没被任何地方引用的文档列出来。
-- **判**：关键文档没有入口 → 🟡（agent 找不到等于没有）。孤儿文档 → 删除或建立入口，⚪/🟡。
+### 3.5 Doc Entry Points & Orphans
+- **Check**: Whether README / rule files link to the docs agents need (architecture, design spec, release process). List docs referenced nowhere.
+- **Verdict**: Key doc has no entry point → 🟡 (if an agent cannot find it, it might as well not exist). Orphan docs → delete or link, ⚪/🟡.
 
-### 3.6 文档重复与"缓存"
-- **查**：同一信息写在多份文档里；文档复述了环境里一查就有的东西（package.json scripts 列表、依赖版本、目录树全文）。
-- **判**：🟡。重复的副本迟早不一致。处方：保留一个权威位置，其余改成指向它；能从环境查到的就别抄。
+### 3.6 Doc Duplication & "Caching"
+- **Check**: Same information written in multiple docs; docs restating facts easily queried from the environment (full `package.json` scripts lists, dependency versions, complete directory trees).
+- **Verdict**: 🟡. Duplicated facts always drift. Prescription: keep one authoritative location and link from everywhere else; do not copy what can be read directly from the repo.
 
-### 3.7 方案质量（看最近 1–3 份方案文档）
-- **查**：方案是否让不懂实现语言的项目作者也能看懂并确认。好方案应讲清：
-  - UI 上会怎么改（有 UI 时）
-  - 用什么思路实现、大概改哪些地方
-  - 特殊情况和边界怎么处理、有哪些风险
-  - 哪些地方需要人来做决定
-  - 怎么验收：AI 自己跑什么测试，人需要手动点哪些流程
-  两类坏方案：满篇技术细节、作者看不懂；或者把需求换个说法复述一遍，没有判断、没有风险、没有做法。
-- **判**：最近的方案普遍缺"需要人决定的事"或"验收方式" → 🟡（作者无法在动工前纠偏，验收也无从下手）。没有方案文档的项目 → 不适用。处方：在规则文件里写一份方案必备要素清单。
+### 3.7 Proposal Quality (Inspect the Latest 1–3 Proposals)
+- **Check**: Whether proposals are understandable and approvable by a project author who does not know the implementation language. Good proposals clearly cover:
+  - How the UI will change (when UI exists)
+  - Implementation approach and roughly what areas will be touched
+  - Edge cases, special scenarios, and risks
+  - Decisions requiring human input
+  - Acceptance plan: what tests AI will run itself, and what flows the human should click through manually
+  Two kinds of bad proposals: dense technical jargon the author cannot read; or merely rephrasing the requirement with no judgment, no risks, and no approach.
+- **Verdict**: Recent proposals consistently lack decisions requiring human input or an acceptance plan → 🟡 (author cannot course-correct before coding or verify afterward). Projects with no proposal docs → N/A. Prescription: add a required-elements checklist for proposals to the rule file.

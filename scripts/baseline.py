@@ -15,8 +15,8 @@ Usage:
 
   python baseline.py score <scores_file> [--items-from OTHER_FILE]
       Computes dimension scores, total and grade from a scores file: one check item per
-      line, "<dim>.<item> <verdict>", e.g. "1.1 🟠", "1.2 通过", "1.5 不适用（无 UI）",
-      "1.2 见 1.1". Only a severity emoji or 通过/pass is scored; every other verdict is
+      line, "<dim>.<item> <verdict>", e.g. "1.1 🟠", "1.2 pass", "1.5 N/A (no UI)",
+      "1.2 see 1.1". Only a severity emoji or pass is scored; every other verdict is
       listed but left out. --items-from keeps only the items that appear in OTHER_FILE
       (fast mode: re-score the baseline on the same ★ items).
 
@@ -196,12 +196,12 @@ def read_scores(path):
                 continue
             rest = m.group(3).strip()
             found = [s for s in SEVERITY if s in rest]
-            if rest.startswith("见"):  # root cause already scored under another item
+            if re.match(r"(见|see\b|不适用|n/a\b|需批准|needs approval|未查|not checked)", rest, re.I):  # unscored verdict (merged, N/A, unrun, skipped)
                 verdict = None
             elif found:
                 verdict = max(found, key=SEVERITY.get)
             else:
-                verdict = "pass" if re.match(r"(通过|pass)", rest, re.I) else None
+                verdict = "pass" if re.match(r"(通过|pass(ed)?\b)", rest, re.I) else None
             items[(int(m.group(1)), int(m.group(2)))] = verdict
     return items
 
@@ -235,9 +235,9 @@ def cmd_score(path, items_from):
         print("total: none (nothing scored)")
         return 0
     total = int(sum(dim_scores) / len(dim_scores) * 10 + 0.5)
-    grade = "健康" if total >= 85 else "亚健康" if total >= 70 else "需要治理" if total >= 50 else "失控"
+    grade = "Healthy" if total >= 85 else "Fair" if total >= 70 else "Needs Remediation" if total >= 50 else "Out of Control"
     if any_red and total >= 70:
-        grade = "需要治理"
+        grade = "Needs Remediation"
     print(f"scored_dims: {len(dim_scores)}")
     print(f"total: {total}")
     print(f"grade: {grade}" + ("  (capped: at least one 🔴)" if any_red and total >= 70 else ""))

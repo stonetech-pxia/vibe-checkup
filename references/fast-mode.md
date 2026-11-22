@@ -1,49 +1,49 @@
-# 快速模式
+# Fast Mode
 
-用户说"快速 / 粗略 / 先扫一眼 / 增量看看"时用。流程仍是 SKILL.md 的五步，这里只写每一步与正常模式不同的地方。
+Use when the user says "quick / rough / quick pass / incremental check". The workflow still follows the five steps in `SKILL.md`; this file covers only what differs at each step.
 
-- **检查项**：只做标 ★ 的项，其余记 `未查（快速模式）`。
-- **审查范围**：有有效基线时只审基线 commit 以来的改动；没有就审整个项目。基线 = 最近一次正常体检留下的 `.vibe-checkup/report.md`。
-- **记录**：写 `.vibe-checkup/fast-report.md` 和 `fast-scores.txt`，不动 `report.md` 和 `scores.txt`——基线始终是最近一次正常体检。
+- **Check items**: check only ★-marked items; mark all others `not checked (fast mode)`.
+- **Review scope**: when a valid baseline exists, inspect only changes since the baseline commit; otherwise inspect the whole project. Baseline = `.vibe-checkup/report.md` from the most recent normal checkup.
+- **Output files**: write `.vibe-checkup/fast-report.md` and `fast-scores.txt`, leaving `report.md` and `scores.txt` untouched—the baseline is always the latest normal checkup.
 
-## 第 1 步：定范围，复用建档卡
+## Step 1: Determine Scope & Reuse Profile Card
 
-`baseline.py stamp` 之后，运行 `python <本skill目录>/scripts/baseline.py scope <项目根>`；读完基线里的建档卡后，如果卡上有"不审查的目录"，带 `--exclude <目录>`（可重复）再跑一次。看输出里的 `verdict`：
+After `baseline.py stamp`, run `python <skill_dir>/scripts/baseline.py scope <project_root>`. After reading the baseline's profile card, if it lists excluded directories, re-run with `--exclude <dir>` (repeatable). Check `verdict` in the output:
 
-- `empty`：自基线以来无改动。不派任何 agent，所有检查项记 `沿用基线`，报告写"自基线以来无改动"。
-- `incremental`：**增量范围 = `changed:` 下列出的文件**（A 新增 / M 修改 / D 删除 / ? 未跟踪）。
-- `full`：**无基线**，`reason` 写明原因（没有报告 / 不是正常模式的报告 / hash 已不存在 / 改动超过已跟踪文件的 40%）。范围是整个项目（仍只做 ★ 项），建档按 SKILL.md 第 1 步完整做。对话里说明原因，并建议先跑一次正常模式建立或刷新基线。
-- 退出码 2 或 `git_error:`：git 本身出错，按 SKILL.md 第 1 步处理。
+- `empty`: no changes since the baseline. Do not dispatch any sub-agents; mark all check items `carried from baseline` and note "No changes since baseline" in the report.
+- `incremental`: **incremental scope = files listed under `changed:`** (`A` added / `M` modified / `D` deleted / `?` untracked).
+- `full`: **no usable baseline**; `reason` explains why (no report / not a normal-mode report / commit hash no longer exists / changes exceed 40% of tracked files). Scope is the whole project (still ★ items only); run full profiling per `SKILL.md` Step 1. Explain the reason in chat and suggest running a normal checkup first to create or refresh the baseline.
+- Exit code 2 or `git_error:`: git itself failed; handle as in `SKILL.md` Step 1.
 
-40% 是默认阈值，可用 `--threshold` 调。基线的 `dirty: true` 表示它审的是含未提交改动的代码；增量范围用"工作区对比基线 commit"计算，这些文件会被当作改动重审，宁多勿漏。
+40% is the default threshold and can be adjusted with `--threshold`. A baseline with `dirty: true` means it audited code that included uncommitted changes; because incremental scope compares the working tree against the baseline commit, those files are treated as changed and re-checked—erring on the side of over-inclusion.
 
-**有基线时**不重做建档：直接复用基线报告里的建档卡，只更新受改动影响的字段，照样存到 `<临时目录>/card.md`；只读 `scan.md` 里与改动集相关的行、改动集里的 README / 规则文件 / 依赖清单，以及 `git log --oneline <基线 commit>..HEAD`。阶段沿用基线，在对话里说一句"阶段沿用基线：X，如已变化请告诉我"，不另外确认。
+**When a baseline exists**, skip full profiling: reuse the profile card from the baseline report, updating only fields affected by the changes, and save it to `<temp_dir>/card.md`. Read only the lines of `scan.md` relevant to the change set, any README / rule files / manifests in the change set, and `git log --oneline <baseline_commit>..HEAD`. Keep the baseline stage and tell the user in chat "Stage carried from baseline: X — let me know if this has changed" without waiting for confirmation.
 
-## 第 2 步：派发
+## Step 2: Dispatch
 
-- 改动集不超过 10 个文件：不派子 agent，主流程直接做（发现照样写进发现文件）。
-- 否则不论项目大小，都按 SKILL.md 第 2 步的三组分法派三个（A / B / C）。无基线时范围是整个项目，照样派这三个。
-- 有基线时 `scan.py` 加 `--since <基线 commit>`。
-- 子 agent 的提示在正常模式的基础上再加：本文件的路径（让它读"增量范围的审查规则"一节）、只做 ★ 项、改动集清单（或"无基线"）、基线里与它相关的发现。
-- 检查项的结论多两种：`未查（快速模式）`、`沿用基线`。计分清单里，`沿用基线` 的项要带上基线的结论（从基线的 `scores.txt` 里抄），写成 `5.4 🟡 沿用基线` 或 `5.4 通过 沿用基线`，这样它才会被计分；非 ★ 项不写进清单。
+- Change set has ≤ 10 files: do not dispatch sub-agents; the main agent runs the checks directly (still writing findings to findings files).
+- Otherwise, regardless of project size, use the three-group split from `SKILL.md` Step 2 (A / B / C). When there is no baseline (whole-project scope), still use those three groups.
+- When a baseline exists, pass `--since <baseline_commit>` to `scan.py`.
+- In addition to the normal-mode prompt, give each sub-agent: the path to this file (instructing it to read "Incremental Scope Review Rules"), "★ items only", the change-set list (or "no baseline"), and any baseline findings relevant to its dimension(s).
+- Two extra verdicts apply: `not checked (fast mode)` and `carried from baseline`. In the score sheet, `carried from baseline` items must carry the baseline's verdict (copied from baseline `scores.txt`), written as `5.4 🟡 carried from baseline` or `5.4 pass carried from baseline`, so they are scored properly; omit non-★ items from the score sheet.
 
-## 增量范围的审查规则（子 agent 也读这一节）
+## Incremental Scope Review Rules (Sub-Agents Read This Section Too)
 
-- 运行 `scan.py` 时加 `--since <基线 commit>`：§1–§3 只列改动文件，其中 §2 的模式命中进一步只列**改动行**（未跟踪的新文件整个算）；§0 和 §4–§8 仍是全项目事实，不受影响。注意：改了一个名字，没改的调用行也可能坏，按行过滤看不到这类问题，需要时按改动里的符号 grep 调用方。
-- 查改动集里的文件和改动的行。可以读范围外的文件做对照（如全仓库 grep 判断是不是重复实现、对照 token 文件），但**不报告范围外文件里的存量问题**——那是基线的事。
-- 基线的每条发现：证据文件都不在改动集 → `沿用基线`，不重查；有证据文件在改动集 → 重新核对，写"仍在 / 已修复 / 恶化"。
-- 与改动无关的检查项（如没碰依赖清单，就不重查 5.4、5.5）→ `沿用基线`。
-- 3.2 例外：改了代码的功能，要反查引用这些路径或功能的文档和规则文件是否过期，即使文档本身没改。
-- 4.4 在增量范围里另查"名字可解析"，做法见 `04-tests.md`。
+- Pass `--since <baseline_commit>` to `scan.py`: §1–§3 list only changed files, and §2 pattern hits are further filtered to **changed lines** (untracked new files count in full); §0 and §4–§8 remain whole-project facts. Note: renaming a symbol can break unchanged call sites that line-level filtering will not show—grep callers for renamed/changed symbols when needed.
+- Inspect files and changed lines in the change set. You may read files outside the scope for comparison (e.g., repo-wide grep for duplicate implementations, checking token files), but **do not report pre-existing issues in unchanged files**—those belong to the baseline.
+- For each baseline finding: if none of its evidence files are in the change set → `carried from baseline`, do not re-check; if any evidence file is in the change set → re-verify and note `still present` / `fixed` / `worsened`.
+- Check items unrelated to the changes (e.g., manifests were untouched, so skip re-checking 5.4 and 5.5) → `carried from baseline`.
+- Exception for 3.2: if code behavior changed, reverse-check docs and rule files referencing those paths or behaviors to see whether they went stale, even if the docs themselves were not edited.
+- Under 4.4, also run the "Name resolution" check on the incremental scope (see `04-tests.md`).
 
-## 第 3 步：复核
+## Step 3: Verification
 
-每条 🔴/🟠 照常做推翻尝试；不做交叉复核。
+Run the usual disproval attempt on every 🔴/🟠 finding; skip second-model cross-verification.
 
-## 第 4 步：评分、对比与报告
+## Step 4: Scoring, Comparison & Report
 
-- 计分清单存成 `.vibe-checkup/fast-scores.txt`，只含 ★ 项，用 `baseline.py score` 算分。分数与正常模式大致可比；报告里仍注明模式。
-- `沿用基线` 的项按基线的结论计入已评项，所以增量分数是"基线结论 + 本次改动的新结论"。
-- 对比：与基线里**同一批 ★ 项**对比，运行 `python <本skill目录>/scripts/baseline.py score <项目>/.vibe-checkup/scores.txt --items-from <项目>/.vibe-checkup/fast-scores.txt` 得到基线在这批项上的分数。基线没有 `scores.txt`（旧版本留下的报告）时，按 `report.md` 的发现和覆盖表先补写一份；没有 `report.md` 写"无基线可比"。快速报告彼此不比较，它们会被覆盖。
-- 报告用完整模板，但省略"治理任务"，规则沉淀至多 3 条；front matter 按模板里快速模式的写法。
-- 无基线时，在对话里加一句建议先跑一次正常模式。
+- Save the score sheet to `.vibe-checkup/fast-scores.txt` (★ items only) and score it with `baseline.py score`. Scores are broadly comparable to normal mode; still note the mode in the report.
+- `carried from baseline` items are scored using their baseline verdicts, so the incremental score reflects "baseline verdicts + new verdicts from this change set".
+- Comparison: compare against the **same set of ★ items** in the baseline by running `python <skill_dir>/scripts/baseline.py score <project>/.vibe-checkup/scores.txt --items-from <project>/.vibe-checkup/fast-scores.txt`. If the baseline lacks `scores.txt` (from an older version), reconstruct one from `report.md`'s findings and coverage table first; if there is no `report.md`, write "No baseline for comparison". Fast reports are not compared against each other because each run overwrites the previous one.
+- Use the full report template, omitting "Remediation Tasks" and capping "Suggested Rules" at 3 items; format front matter per the fast-mode example in the template.
+- When there is no baseline, add a line in chat suggesting a normal checkup first.

@@ -1,54 +1,54 @@
-# 体检简报
+# Checkup Brief
 
-主流程和每个子 agent 都按这份文件做。
+Both the main agent and every sub-agent follow this document.
 
-## 纪律
+## Discipline
 
-1. **只诊断，不动刀。**
-   - 可以直接做：读文件；运行本 skill 的 `scan.py`；只读的 git 命令；**本机已安装**的静态分析工具（JS 用 `npx --no-install <tool>`，没装就跳过并在结论里写"工具未安装"）。
-   - 必须先问用户：运行测试、启动应用、任何会联网下载或安装的命令、任何需要编译项目的工具（如 `cargo udeps`、`periphery scan`）。
-   - 唯一的写入：`<项目>/.vibe-checkup/` 目录。第 1 步 `baseline.py stamp` 会建好它，并在里面放一个内容为一行 `*` 的 `.gitignore`——整个目录自己对 git 不可见，不碰项目的 `.gitignore`；第 4 步在里面写报告和计分清单（正常模式 `report.md`、`scores.txt`，快速模式 `fast-report.md`、`fast-scores.txt`）。工作文件（扫描输出、建档卡、发现文件）写在临时目录，不进项目。除此之外不改代码、不删文件、不建文件。
-   - **子 agent 不能问用户**：凡是"必须先问用户"的事一律不做，结论写 `需批准，未执行`，并给出静态判断（会不会有副作用、预计耗时、建议的命令），由主流程汇总到报告的"需要你决定的事"。
-2. **线索 ≠ 发现。** `scan.py`、grep、工具输出都只是线索。打开文件确认之后才是发现，每条带 `path:line` 证据。
-3. **按阶段校准。** 未发布原型里的兼容 fallback 是纯浪费；已有用户的产品没有回滚路径是致命。同一现象，阶段不同，严重度不同。阶段四选一：
-   - **原型**：还在验证想法，没有固定用户
-   - **自用**：作者自己长期在用
-   - **准备发布**：即将首次交给别人用（开源、内测、上架前）。发布相关检查项照常检查，严重度比"已发布"低一级，并写明"发布后升级为 X"
-   - **已发布**：有作者以外的用户
-   另记**分发方式**：二进制/安装包、托管服务、或用户从源码运行（git clone）。参考文件里的发布类检查项按分发方式解读。
-4. **密钥只露脱敏片段。** 任何地方（对话、子 agent 返回、报告）引用到密钥、token、密码时，只写前 6 个字符加 `…`，绝不输出完整值。
+1. **Diagnose only—do not operate.**
+   - Allowed directly: reading files; running this skill's `scan.py`; read-only git commands; static analysis tools **already installed locally** (for JS use `npx --no-install <tool>`; if not installed, skip and note `tool not installed` in the verdict).
+   - Must ask the user first: running tests, launching the app, any command that downloads or installs over the network, and any tool that compiles the project (e.g., `cargo udeps`, `periphery scan`).
+   - Only permitted write: `<project>/.vibe-checkup/`. Step 1's `baseline.py stamp` creates it with a single-line `*` `.gitignore` so the directory hides itself from git without touching the project's `.gitignore`; Step 4 writes the report and score sheet inside it (normal mode: `report.md`, `scores.txt`; fast mode: `fast-report.md`, `fast-scores.txt`). Scratch files (scan output, profile card, findings files) go in a temp directory, never inside the project. Do not modify code, delete files, or create files anywhere else.
+   - **Sub-agents cannot ask the user**: skip anything that requires user permission, mark the verdict `needs approval, not run`, and provide a static assessment (potential side effects, estimated runtime, suggested command) so the main agent can roll it into "Decisions Needed" in the report.
+2. **Leads ≠ Findings.** Output from `scan.py`, `grep`, or linters is only a lead. Open the file and confirm before calling anything a finding, and cite `path:line` evidence for every finding.
+3. **Calibrate by stage.** Compatibility fallbacks in an unreleased prototype are pure waste; shipping without a rollback path to real users is critical. The same symptom carries different severity depending on stage. Choose one of four stages:
+   - **`prototype`**: still validating the idea; no regular users
+   - **`personal`**: used long-term by the author alone
+   - **`pre-release`**: about to be handed to others for the first time (before open-sourcing, beta testing, or store submission). Run release-related checks as normal, downgrade severity by one level compared to `released`, and note `upgrades to X after release`
+   - **`released`**: has users other than the author
+   Also record the **distribution method**: `installer / binary`, `hosted service`, or `run from source (git clone)`. Interpret release checks in the reference docs according to the distribution method.
+4. **Redact secrets everywhere.** Whenever citing a key, token, or password (in chat, sub-agent replies, or the report), show only the first 6 characters followed by `…`—never output the full value.
 
-## 子 agent 的任务与返回格式
+## Sub-Agent Assignment & Return Format
 
-读建档卡（路径在你的提示里）和你负责的参考文件，运行提示里给的 `scan.py` 命令，然后按参考文件**逐项**给结论。每个检查项一个结论：`发现` / `通过` / `不适用（一句理由）` / `需批准，未执行`。漏一项就没做完。
+Read the profile card (path given in your prompt) and your assigned reference file(s), run the `scan.py` command from your prompt, and produce a verdict for **every check item** in the reference file. Each check item gets one verdict: `finding` / `pass` / `N/A (<one-line reason>)` / `needs approval, not run`. Missing even one item means the job is incomplete.
 
-**发现写进文件，只写一次。** 把完整的发现写到提示指定的发现文件：每个维度以 `### 维度 N：名称` 开头，用"发现格式"，按严重度排序，同类合并，证据最多 3 处加总数，引用代码不超过 5 行。报告会直接拼接这个文件，所以它要能独立成文。
+**Write findings to file—once.** Write full findings to the findings file specified in your prompt: start each dimension with `### Dimension N: Name`, use the "Finding Format" below, sort by severity, merge duplicates of the same kind, include at most 3 evidence locations plus total count, and keep code snippets to at most 5 lines. The report splices this file in directly, so it must stand on its own.
 
-你的返回会全部留在主会话上下文里，之后每一轮都要带着它，所以只返回两样：
+Everything you return stays in the main session's context for every remaining turn, so return only two things:
 
-- ① 每条发现一行摘要：`[🟠] 1.1 标题 — path:line（共 N 处）`。不重抄影响和处方。
-- ② 计分清单，每个检查项一行：`1.1 🟠`（该项最严重的那条发现）/ `1.2 通过` / `1.5 不适用（一句理由）` / `5.4 需批准，未执行（静态判断和建议的命令）`。
-- 不复述任务，不写过程。
-- 末尾可加一段"参考文件本身的问题"（哪些项难执行、门槛不清、命令不可用），供改进本 skill；没有就不写。
+- ① A one-line summary per finding: `[🟠] 1.1 Title — path:line (N total)`. Do not repeat impact or prescription.
+- ② A score sheet with one line per check item: `1.1 🟠` (highest severity finding for that item) / `1.2 pass` / `1.5 N/A (<one-line reason>)` / `5.4 needs approval, not run (static assessment and suggested command)`.
+- Do not restate the task or narrate your process.
+- Optionally add a short "Issues in Reference Docs" note at the end (items that were hard to execute, unclear thresholds, broken commands) to help improve this skill; omit if none.
 
-## 发现格式
+## Finding Format
 
 ```
-[🔴|🟠|🟡|⚪] <维度.检查项> 标题
-- 证据：path:line（同类再列 1–3 处，并给出总数）
-- 影响：它会怎样误导下一个 agent / 伤到用户 / 拖慢迭代
-- 处方：具体做法（改哪里、收敛到哪个唯一信息源、删什么）
-- 工作量：S（一个 agent 一小时内）/ M（半天）/ L（需要拆分）
-- 置信度：高 / 中 / 低
+[🔴|🟠|🟡|⚪] <dimension.item> Title
+- Evidence: path:line (list 1–3 more occurrences of the same kind, plus total count)
+- Impact: how it misleads the next agent / harms users / slows iteration
+- Prescription: concrete fix (where to edit, which single source of truth to converge on, what to delete)
+- Effort: S (one agent, under an hour) / M (half a day) / L (needs splitting)
+- Confidence: High / Medium / Low
 ```
 
-置信度由写下这条发现的人先填；主流程复核 🔴/🟠 时再核对一遍。
+The author of the finding fills in Confidence initially; the main agent re-checks it when verifying 🔴/🟠 findings.
 
-## 严重度
+## Severity Levels
 
-- 🔴 **致命**：密钥或用户数据泄露风险；发布后崩溃且用户没有恢复路径；agent 会读的文档或规则里有与代码矛盾、**且会把核心流程或架构带错**的陈述（单个过期路径不算）；闭源商用项目里含 GPL/AGPL 代码；核心用户流程实际跑不通。
-- 🟠 **高**：结构性问题，每加一个功能就复制一次混乱——没有唯一信息源、同一逻辑多套实现、fallback 叠层、规则缺失导致同一个坑反复踩。
-- 🟡 **中**：局部混乱，浪费 token、拖慢迭代、增加维护面。
-- ⚪ **低**：卫生与风格问题。
+- 🔴 **Critical**: risk of secret or user-data exposure; post-release crash with no user recovery path; a statement in docs or rules read by agents that contradicts code **and will misdirect a core flow or architecture** (a single stale path does not qualify); GPL/AGPL code in a closed-source commercial project; a core user flow that does not actually work.
+- 🟠 **High**: structural problem that multiplies mess with every new feature—no single source of truth, multiple implementations of the same logic, stacked fallbacks, missing rules causing the same bug to recur.
+- 🟡 **Medium**: localized mess that wastes tokens, slows iteration, or expands maintenance surface.
+- ⚪ **Low**: hygiene and style issues.
 
-各检查项的具体判定门槛写在参考文件里，以参考文件为准。
+Exact thresholds for each check item live in the dimension reference files and take precedence.

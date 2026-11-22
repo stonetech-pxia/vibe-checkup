@@ -1,109 +1,109 @@
 ---
 name: vibe-checkup
-description: 给 AI 长期迭代（vibe coding）的项目做体检：找出会把下一个 agent 带偏的沉积（重复实现、硬编码、过期文档、缺失的规则、臃肿测试、无回滚的发布等），输出带证据的分级报告、可直接粘贴的规则和治理任务。Use when 用户说 体检 / 健康检查 / health check / 项目治理 / 项目越写越乱 / 加功能越来越费劲 / AI 写的代码失控，或在 AI 写成的项目上开大功能、发版之前。
+description: Run a health checkup on an AI-iterated (vibe coding) project to find buildup that will mislead the next agent (duplicate implementations, hardcoded values, stale docs, missing rules, bloated tests, releases with no rollback, etc.). Produces an evidence-backed severity report, ready-to-paste agent rules, and remediation tasks. Use when the user asks for a checkup, health check, project audit, or codebase governance; says the project is getting messier, adding features is getting harder, or AI-written code is out of control; or before starting a major feature or shipping a release on an AI-built project.
 ---
 
 # Vibe Checkup
 
-AI 长期迭代的项目不会突然坏掉，它会**沉积**：每次迭代留下一层没清理的样式、fallback、方案文档和测试，直到新功能越加越费劲。体检只回答一个问题：
+An AI-iterated project does not break overnight—it accumulates **sediment**. Every iteration leaves behind another layer of uncleaned styles, fallbacks, design proposals, and tests until adding new features becomes a slog. A checkup answers one question:
 
-> **哪些东西会让下一个 agent 写出更差的代码，或让人更难验收和维护？**
+> **What in this repo will cause the next agent to write worse code, or make it harder for humans to verify and maintain?**
 
-每条发现都必须说清它怎么误导下一个 agent（或伤到用户）。说不清的，不是发现。
+Every finding must explain how it misleads the next agent (or harms users). If you cannot explain that, it is not a finding.
 
-## 开始前
+## Before You Start
 
-1. **先读 `references/agent-brief.md`**：纪律、发现格式、严重度。主流程和每个子 agent 都按它做。最要紧的一条是**只诊断，不动刀**：唯一的写入是 `<项目>/.vibe-checkup/`；运行测试、启动应用、联网、编译都要先问用户。
-2. **定模式**：默认正常模式，下文写的就是它。用户说"快速 / 粗略 / 先扫一眼 / 增量看看" → 快速模式（只做标 ★ 的项；有基线时只审基线以来的改动），再读 `references/fast-mode.md`，它写明每一步与下文不同的地方。
-3. 脚本需要 Python 3（`python` 不存在就用 `python3`）。都没有：告诉用户，停下。
+1. **Read `references/agent-brief.md` first**: discipline, finding format, and severity rules. Both the main agent and every sub-agent follow it. The most important rule is **diagnose only—do not operate**: the only write allowed is `<project>/.vibe-checkup/`; running tests, launching the app, network access, and compiling all require asking the user first.
+2. **Choose the mode**: normal mode is the default and is described below. If the user says "quick / rough / quick pass / incremental check" → use fast mode (check only ★ items; when a baseline exists, inspect only changes since the baseline), and read `references/fast-mode.md`, which details every step that differs from below.
+3. Scripts require Python 3 (use `python3` if `python` is unavailable). If neither exists, tell the user and stop.
 
-## 模型分配
+## Model Allocation
 
-子 agent 默认继承主会话模型，会把最贵的模型花在读代码的体力活上。分两档：
+Sub-agents inherit the main session's model by default, which wastes the most expensive model on mechanical code reading. Split work into two tiers:
 
-- **最强档**（主会话模型，不另指定）：第 1 步建档（阶段判错会让所有维度的严重度失准）、维度 3（3.2 是最容易出 🔴 的地方）、第 3 步复核、第 4 步评分和写报告。
-- **标准档**（环境里比主会话模型低一档的模型）：维度 1、2、4、5、6；第 5 步用户批准后的执行（主流程仍要亲自看 diff）。
+- **Top tier** (main session model, no override): Step 1 profiling (getting the project stage wrong throws off severities across every dimension), Dimension 3 (3.2 is the most likely place to produce 🔴), Step 3 verification, and Step 4 scoring and report writing.
+- **Standard tier** (one tier below the main session model in your environment): Dimensions 1, 2, 4, 5, and 6; Step 5 execution after user approval (the main agent must still inspect the diff personally).
 
-按所在环境的方式指定，例如 Claude Code 的 Agent 工具传 `model: "sonnet"`，其他环境用各自的中档模型或降低推理强度。指定不了就继承；不要因为省 token 而跳检查项。
+Specify the tier using your environment's mechanism—for example, pass `model: "sonnet"` to Claude Code's Agent tool, or use the mid-tier model / lower reasoning effort in other environments. If you cannot specify a model, inherit it; never skip check items to save tokens.
 
-## 流程
+## Workflow
 
-### 1. 建档
+### 1. Project Profiling
 
-1. 运行 `python <本skill目录>/scripts/baseline.py stamp <项目根目录>`，得到 `commit` 和 `dirty`，并建好 `.vibe-checkup/` 及其 `.gitignore`。输出里有 `git_error:`（退出码 2）：停下，把错误原文告诉用户（常见是 Windows 的 dubious ownership），等修好再继续。**不要**当成"不是 git 仓库"处理。
-2. 运行扫描，输出存到临时目录，不要写进项目。主流程建档只需要 §0（概况）、§5（文档与规则）、§7（git 历史），所以只取这三节：
-   `python <本skill目录>/scripts/scan.py <项目根目录> --section 0,5,7 > <临时目录>/scan.md`
-   `scan.md` §0 出现 `GIT ERROR` 的处理同上。各维度要的章节由子 agent 自己取（见第 2 步）；不派子 agent、主流程自己做各维度时，做到哪个维度才取对应章节。
-3. 读 `scan.md`、README、所有 agent 规则文件、依赖清单、两层目录树、`git log --oneline -30`。若存在 `<项目>/.vibe-checkup/report.md`（上次正常体检），也读。
-4. 写出**建档卡**，存到 `<临时目录>/card.md`（子 agent 从这里读，不必在每个提示里重抄），字段固定：
-   - 项目一句话；技术栈
-   - 阶段：原型 / 自用 / 准备发布 / 已发布，及判断依据；分发方式
-   - 有无 UI
-   - 核心用户流程 3–5 条，每条写成"入口 → 用户得到的结果"
-   - 关键位置：token/主题、通用组件、工具函数、文档、测试、规则文件各在哪（没有就写"无"）。**规则文件要求 agent 读、但被 git 忽略的文档**（scan §5 "ignored docs referenced by rule files"）单独列出，维度 3 必须查它们
-   - 不要审查的目录（其他分支的工作树、生成物、第三方代码、私人数据）
-   - 适用维度与不适用维度（附理由）；用户指定了范围就只列那些
-   - `scan.md` 的路径
-5. **确认阶段**：用一两句话把阶段、分发方式、不审查的目录告诉用户。判断依据不足时（看不出有没有作者以外的用户、是否商用、某个目录是不是别人的代码），**问用户一次**再往下走——阶段错了，后面所有严重度都要重判；依据充分就直接继续，不等回复。
+1. Run `python <skill_dir>/scripts/baseline.py stamp <project_root>` to obtain `commit` and `dirty`, and to create `.vibe-checkup/` with its `.gitignore`. If the output contains `git_error:` (exit code 2): stop, show the raw error to the user (commonly Windows `dubious ownership`), and wait until it is fixed before continuing. **Do not** treat this as "not a git repository".
+2. Run the mechanical scan and save output to a temp directory—never write it into the project. Main-agent profiling only needs §0 (Profile), §5 (Docs & rules), and §7 (Git history), so fetch only those three sections:
+   `python <skill_dir>/scripts/scan.py <project_root> --section 0,5,7 > <temp_dir>/scan.md`
+   Handle `GIT ERROR` in `scan.md` §0 the same way as above. Each sub-agent fetches its own sections in Step 2; if running sequentially without sub-agents, fetch each dimension's sections only when you reach that dimension.
+3. Read `scan.md`, README, all agent rule files, dependency manifests, a two-level directory tree, and `git log --oneline -30`. If `<project>/.vibe-checkup/report.md` exists (the previous normal checkup), read it too.
+4. Write a **profile card** to `<temp_dir>/card.md` (sub-agents read it directly so you do not have to repeat it in every prompt) with these fixed fields:
+   - One-sentence project summary; tech stack
+   - Stage: `prototype` / `personal` / `pre-release` / `released`, with rationale; distribution method
+   - Has UI (yes/no)
+   - 3–5 core user flows, each written as "entry point → result the user gets"
+   - Key locations: where tokens/themes, shared components, utility functions, docs, tests, and rule files live (write "none" if absent). List **git-ignored docs that rule files tell agents to read** (scan §5 "ignored docs referenced by rule files") separately—Dimension 3 must inspect them
+   - Directories to exclude from review (other branch worktrees, generated artifacts, third-party code, private data)
+   - Applicable and non-applicable dimensions (with reasons); if the user specified a scope, list only those
+   - Path to `scan.md`
+5. **Confirm the stage**: in 1–2 sentences, tell the user the inferred stage, distribution method, and excluded directories. If the evidence is insufficient (cannot tell whether there are external users, whether it is commercial, or whether a directory is third-party code), **ask the user once** before proceeding—a wrong stage invalidates every downstream severity. If the evidence is clear, continue without waiting for a reply.
 
-完成标准：建档卡每个字段都填了，阶段有依据。
+Completion criteria: every field on the profile card is filled in, and the stage has clear evidence.
 
-### 2. 分维度检查
+### 2. Per-Dimension Checks
 
-| # | 维度 | 参考文件 | scan 章节 | 适用 |
-|---|------|----------|-----------|------|
-| 1 | 一致性与唯一信息源（样式 token、通用组件、交互模式、架构模式） | `references/01-consistency.md` | 0,2 | 有 UI 全做；无 UI 只做 1.7 |
-| 2 | 代码卫生（硬编码、重复实现、fallback 叠层、占位假数据、吞错误、类型逃逸、巨型文件、一次性脚本、注释残留） | `references/02-code-hygiene.md` | 0,1,2,4 | 总是 |
-| 3 | 文档与规则（文档腐烂、方案质量、规则文件质量、规则副本） | `references/03-docs-and-rules.md` | 0,4,5,7 | 总是 |
-| 4 | 测试体系（分层、表面测试、关键路径、人工验收、调试工具） | `references/04-tests.md` | 0,6 | 总是 |
-| 5 | 依赖、许可证与安全 | `references/05-deps-and-security.md` | 0,3,7,8 | 总是 |
-| 6 | 交付与迭代治理（git、分支、发布闸门、回滚、安全模式、疑难 bug 止损、新环境可运行） | `references/06-delivery-and-iteration.md` | 0,7 | 总是；发布类检查项（6.3–6.6）只对"准备发布"和"已发布"做，其他阶段记不适用 |
+| # | Dimension | Reference File | scan Sections | Applicability |
+|---|-----------|----------------|---------------|---------------|
+| 1 | Consistency & Single Source of Truth (style tokens, shared components, interaction patterns, architectural patterns) | `references/01-consistency.md` | 0,2 | All items if UI exists; 1.7 only if no UI |
+| 2 | Code Hygiene (hardcoding, duplicate implementations, fallback stacking, mock/placeholder data, swallowed errors, type escapes, god files, one-off scripts, lying comments) | `references/02-code-hygiene.md` | 0,1,2,4 | Always |
+| 3 | Docs & Rules (doc rot, proposal quality, rule file quality, duplicated rules) | `references/03-docs-and-rules.md` | 0,4,5,7 | Always |
+| 4 | Test Suite (layering, superficial tests, critical paths, manual acceptance, programmatic debug tools) | `references/04-tests.md` | 0,6 | Always |
+| 5 | Dependencies, Licenses & Security | `references/05-deps-and-security.md` | 0,3,7,8 | Always |
+| 6 | Delivery & Iteration Governance (git, branching, release gates, rollback, safe mode, bug-churn stop-loss, fresh-env setup) | `references/06-delivery-and-iteration.md` | 0,7 | Always; release items (6.3–6.6) apply only to `pre-release` and `released`—mark N/A for other stages |
 
-- **能派子 agent 时**，并行派，档位见"模型分配"：
-  - 源码不足 5000 行（scan §0 的 source lines）：派三个。A = 维度 1+2（标准档），B = 维度 3（最强档），C = 维度 4+5+6（标准档）；scan 章节取并集。小项目上每个 agent 熟悉项目的固定开销比检查本身还大。
-  - 否则每个适用维度派一个。
-  - 纪律、格式这些共享内容都在简报文件里，不要在提示里重抄。每个子 agent 的提示只写：
-    - 先读 `<本skill目录>/references/agent-brief.md` 和建档卡 `<临时目录>/card.md`
-    - 它负责的维度和参考文件路径
-    - 它要运行的扫描命令：`python <本skill目录>/scripts/scan.py <项目根目录> --section <上表章节>`
-    - 它的发现文件路径：`<临时目录>/findings-<维度号>.md`（一个 agent 管多个维度时共用一个文件，如 `findings-1-2.md`）
-- **不能派时**：逐个维度做，做到哪个维度才读哪个参考文件、取哪些 scan 章节；每做完一个维度，按简报的格式把发现写进它的发现文件。
+- **When sub-agents are available**, dispatch them in parallel using the tiers from "Model Allocation":
+  - Fewer than 5,000 source lines (scan §0 `source lines`): dispatch three sub-agents. A = Dimensions 1+2 (Standard tier), B = Dimension 3 (Top tier), C = Dimensions 4+5+6 (Standard tier); take the union of their scan sections. On small projects, per-agent ramp-up overhead exceeds the inspection itself.
+  - Otherwise, dispatch one sub-agent per applicable dimension.
+  - Shared rules and formats live in the brief—do not repeat them in prompts. Each sub-agent prompt should contain only:
+    - Instruction to read `<skill_dir>/references/agent-brief.md` and `<temp_dir>/card.md` first
+    - Its assigned dimension(s) and reference file path(s)
+    - Its scan command: `python <skill_dir>/scripts/scan.py <project_root> --section <sections from table>`
+    - Its findings file path: `<temp_dir>/findings-<dim>.md` (shared file when one agent covers multiple dimensions, e.g. `findings-1-2.md`)
+- **When sub-agents are unavailable**: work through dimensions one by one, reading each reference file and fetching its scan sections only when you reach it; after finishing each dimension, write its findings to its findings file in the brief's format.
 
-**发现只写一次**：完整的发现只存在于发现文件里。子 agent 返回的是每条发现的一行摘要和计分清单；主流程不重抄发现，报告里的"全部发现"由脚本从发现文件拼出来（第 4 步）。
+**Write findings once**: full findings live only in the findings files. Sub-agents return only one-line summaries per finding plus the score sheet; the main agent never re-types findings—Step 4 assembles the "All Findings" section directly from the findings files via script.
 
-完成标准：每个适用维度的**每个检查项**都有结论——`发现` / `通过` / `不适用（一句理由）` / `需批准，未执行`。漏一项就没做完。
+Completion criteria: **every check item** in every applicable dimension has a verdict—`finding` / `pass` / `N/A (<one-line reason>)` / `needs approval, not run`. Missing even one item means the step is incomplete.
 
-### 3. 复核与汇总
+### 3. Verification & Synthesis
 
-1. **复核**每条 🔴 和 🟠：到发现文件里读这一条的全文，重新打开证据代码（默认只读 `path:line` 前后各约 30 行，需要上下文再扩大；重复实现、架构类发现的证据跨文件，按需读），**试着推翻它**——是不是第三方/生成代码？有没有注释说明的正当理由？这条路径真的会执行吗？别处是否已兜住？推不翻的核对置信度（高 / 中 / 低）；推翻了的降级或删除。结论有变就直接改发现文件里的那一条和计分清单里的那一行。另从标准档子 agent 报"通过"的 ★ 项里抽查 1–2 项（复核只能抓误报，抓不到漏报）。
-2. **交叉复核**：环境里有另一个模型可调（如 codex CLI 或委派类 skill）时，把 🔴 发现和证据路径交给它独立复核（只读模式，只给问题和路径，不给你的结论）。结论不一致时标"有分歧"：**计分按多数意见**（检查者、主流程复核、第二模型三方；只有两方时按主流程复核的结论），报告里写明各方意见，并把它列进"需要你决定的事"。
-3. **汇总去重**：同一个根因被两个维度都报了（例如两套 HTTP 库同时出现在 1.7 和 5.4），只保留在最贴切的那个检查项下；另一处从发现文件里删掉，计分清单里写 `1.7 见 5.4`。
-4. **找跨维度的复发模式**：把所有维度里出现两处以上的同类问题列出来，对照规则文件（3.3 的清单）看有没有规则在防它。这是第 5 步"规则沉淀"的原料。
+1. **Verify** every 🔴 and 🟠 finding: read the full entry in the findings file, re-open the cited code (default to ±30 lines around `path:line`, expanding only if context is needed; read across files as needed for duplication or architecture findings), and **try to disprove it**—is it third-party or generated code? Is there a documented legitimate reason? Does this path actually execute? Is it already guarded elsewhere? If it holds up, verify its confidence (`High` / `Medium` / `Low`); if disproven, downgrade or delete it. Whenever a verdict changes, update both that entry in the findings file and its line in the score sheet directly. Also spot-check 1–2 ★ items marked `pass` by Standard-tier sub-agents (verification catches false positives, not false negatives).
+2. **Cross-verification**: when a second model is callable in your environment (e.g., Codex CLI or a delegation skill), hand the 🔴 findings and evidence paths to it for independent review (read-only mode; give only the question and paths, never your verdict). If opinions conflict, mark the finding `disputed`: **score by majority** (inspector, main-agent verifier, and second model; with only two parties, follow the main-agent verifier), record each view in the report, and add it to "Decisions Needed".
+3. **Deduplicate**: when two dimensions report the same root cause (for example, two HTTP libraries flagged under both 1.7 and 5.4), keep it under the single best-fitting check item; remove the duplicate from the other findings file and write `1.7 see 5.4` in the score sheet.
+4. **Identify cross-dimension recurring patterns**: list issue categories appearing in two or more places across dimensions and check them against the rule files (from 3.3) to see whether any rule prevents them. This feeds "Suggested Rules" in Step 5.
 
-完成标准：每条 🔴/🟠 都带置信度且经历过一次推翻尝试；没有一个根因被重复计分。
+Completion criteria: every 🔴/🟠 finding carries a confidence level and has survived a disproval attempt; no root cause is double-scored.
 
-### 4. 评分与报告
+### 4. Scoring & Reporting
 
-**评分**交给脚本，不要手算：
-1. 把复核后的计分清单存成 `<项目>/.vibe-checkup/scores.txt`（覆盖旧的；有旧的先读，对比要用）。每个检查项一行：`1.1 🟠`（该项最严重的那条发现）/ `1.2 通过` / `1.5 不适用（无 UI）` / `5.4 需批准，未执行` / `1.7 见 5.4`。
-2. 运行 `python <本skill目录>/scripts/baseline.py score <项目>/.vibe-checkup/scores.txt`，得到各维度分、总分和等级。
+**Delegate scoring to the script—never calculate by hand**:
+1. Save the verified score sheet to `<project>/.vibe-checkup/scores.txt` (overwriting the previous file; read the old one first for comparison). One check item per line: `1.1 🟠` (highest severity finding for that item) / `1.2 pass` / `1.5 N/A (no UI)` / `5.4 needs approval, not run` / `1.7 see 5.4`.
+2. Run `python <skill_dir>/scripts/baseline.py score <project>/.vibe-checkup/scores.txt` to get per-dimension scores, total score, and health grade.
 
-脚本的规则（向用户解释分数时用）：每个检查项按最严重的发现扣一次，🔴 −4、🟠 −2、🟡 −1、⚪ 0，合并或拆分发现不影响分数；维度分 = 10 × max(0, 1 − 扣分 ÷ (2 × 已评项数))，只有"发现"和"通过"算已评；总分 = 已评分维度的平均分 × 10；85+ 健康，70–84 亚健康，50–69 需要治理，<50 失控，**有任何 🔴 时等级最高为"需要治理"**。
+Script formula (for explaining scores to the user): each check item is deducted once based on its highest-severity finding—🔴 −4, 🟠 −2, 🟡 −1, ⚪ 0—so merging or splitting findings does not distort the score; dimension score = `10 × max(0, 1 − deduction / (2 × scored_items))`, where only `finding` and `pass` count as scored; total score = average of scored dimension scores × 10; grades: 85+ `Healthy`, 70–84 `Fair`, 50–69 `Needs Remediation`, <50 `Out of Control`, **capped at `Needs Remediation` whenever any 🔴 exists**.
 
-与上次对比：只有两次的**已评分维度集合相同**时才比较总分，否则只比较各维度分和具体发现。
+Comparison with the previous checkup: compare total scores only when both runs have the **exact same set of scored dimensions**; otherwise compare only per-dimension scores and specific findings.
 
-**报告**：
-- 按 `references/report-template.md` 写，存到 `<项目>/.vibe-checkup/report.md`，**覆盖**旧文件——体检报告自己不能变成沉积。有上次报告时，先把对比写进新报告再覆盖。
-- "全部发现"一节只写一行 `<!-- FINDINGS -->`，写完报告后运行 `python <本skill目录>/scripts/baseline.py assemble <报告路径> <发现文件…>`（按维度顺序列出发现文件），脚本把它换成发现全文。
-- 这份报告同时是快速模式的**基线**：front matter 写 `mode: normal`、日期、`commit` 和 `dirty`（后两项直接抄第 1 步 `baseline.py stamp` 的输出），正文保留完整建档卡。`scores.txt` 也是基线的一部分。
-- 在对话里给用户：总分与等级、最该先处理的 3–5 条、报告路径。
+**Report**:
+- Follow `references/report-template.md` and save to `<project>/.vibe-checkup/report.md`, **overwriting** the previous file—checkup reports themselves must not become sediment. If a prior report exists, write the comparison into the new report before overwriting.
+- In the "All Findings" section, write only a single `<!-- FINDINGS -->` line. After writing the report, run `python <skill_dir>/scripts/baseline.py assemble <report_path> <findings_file...>` (list findings files in dimension order) to replace the placeholder with the full findings.
+- This report also serves as the **baseline** for fast mode: put `mode: normal`, date, `commit`, and `dirty` in front matter (copy the last two verbatim from Step 1's `baseline.py stamp` output), and keep the complete profile card in the body. `scores.txt` is also part of the baseline.
+- In chat, give the user: total score and grade, the top 3–5 items to tackle first, and the report path.
 
-### 5. 开处方（只提议，不执行）
+### 5. Prescription (Propose Only—Do Not Execute)
 
-报告末尾三样东西，然后问用户先做哪些：
+End the report with three sections, then ask the user which items to tackle first:
 
-1. **先止血**：所有 🔴，每条一行标题加最小修复方案（全文在"全部发现"里，不重抄）。
-2. **规则沉淀**：把第 3 步找到的、没有规则防护的复发模式，转写成可直接粘贴进 AGENTS.md / review.md 的规则——一条一行，正面陈述该怎么做，指向唯一信息源的路径。只修不立规，下一个 agent 会再犯。
-3. **治理任务**：把剩余发现分组成互相独立的任务，每个任务的大小适合一个 agent 会话完成，带验收标准。
+1. **Stop the Bleeding**: all 🔴 findings—one line each with title and minimal fix (full text lives in "All Findings"; do not repeat it).
+2. **Suggested Rules** (rule codification): turn the unguarded recurring patterns from Step 3 into rules ready to paste into `AGENTS.md` / `review.md`—one rule per line, stated affirmatively, pointing to the single source of truth. Fixing code without adding a rule guarantees the next agent will repeat the mistake.
+3. **Remediation Tasks**: group remaining findings into independent tasks, each sized for a single agent session and paired with acceptance criteria.
 
-用户批准后才动手。执行时：删除前先列清单给用户看；改动按任务分别提交；改完只跑该模块的测试，功能级改动全部完成后再跑一次全量。**改到了没有测试覆盖的文件**（入口文件、窗口主进程、启动脚本）时，测试全绿不代表能跑：至少按 `references/04-tests.md` 4.4 的"名字可解析"查一遍改动文件，并把"需要你手动启动验证的点"写进交付说明。交给子 agent 执行时，主流程要亲自看 diff，不能只看它的汇报。
+Act only after the user approves. During execution: present a deletion list to the user before deleting anything; commit changes per task; run only module-scoped tests after each edit, then run the full test suite once all feature-level changes are complete. **When edits touch files without test coverage** (entry points, main window processes, startup scripts), green tests do not prove the app runs: at minimum run the "Name resolution" check from `references/04-tests.md` 4.4 on the modified files, and list "manual startup verification points" in the handoff note. When delegating execution to a sub-agent, the main agent must inspect the diff personally rather than relying solely on its summary.

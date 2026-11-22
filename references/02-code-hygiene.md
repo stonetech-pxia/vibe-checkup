@@ -1,61 +1,61 @@
-# 维度 2：代码卫生
+# Dimension 2: Code Hygiene
 
-**病因**：AI 倾向于就地解决问题——写死一个值、复制一段逻辑、保留旧实现当 fallback、先用假数据把界面撑起来、写个一次性脚本探路。每一处都省了当下的事，却让仓库里"看起来能用、其实不该存在"的代码越来越多。下一个 agent 会读这些代码、模仿这些代码，还要为它们付 token。
+**Root cause**: AI solves problems locally—hardcoding a value, copying a block of logic, keeping the old implementation as a fallback, propping up a screen with mock data, or writing a one-off probe script. Each shortcut saves effort in the moment, while piling up code that "looks like it works, but shouldn't exist". The next agent reads it, imitates it, and burns tokens on it.
 
-scan.py 已把第三方目录（§0 "treated as vendored"）和生成/压缩文件（§0 "generated/minified"）排除在外。如果它把项目自己的代码误判为第三方，先纠正再继续。
+`scan.py` already excludes vendored third-party directories (§0 "treated as vendored") and generated/minified files (§0 "generated/minified"). If it misclassified first-party project code as third-party, correct that first before proceeding.
 
 ---
 
-### 2.1 ★ 硬编码
-- **查**：scan §2 的 `hardcoded_color` / `hardcoded_size` / `hardcoded_endpoint` / `local_path`。另查魔法数字（超时、重试次数、分页大小、阈值、尺寸）和环境相关值（端口、域名、bucket 名、模型名、价格）是否在多处重复出现：
-  `git grep -nE "<可疑值>" -- <源码目录>`
-- **判**：同一个值出现 **≥3 处**，或值随环境/设备变化却写死 → 🟠（改一处漏一处的根源）。出现 2 处 → 🟡。本机绝对路径（`C:\…`、`D:\…`、`/Users/<名字>/`）出现在运行时代码里 → 🟠（换机器就坏）；只出现在提示文案、注释或带环境变量兜底的默认值里 → 通过。只出现一次、语义清晰的局部常量 → 通过。**固定的协议/格式常量**（采样率、文件头魔数、标准端口号之外的规范值，以及本应用自己约定且可被配置覆盖的默认端口）重复出现最多判 🟡：它们几乎不会改，但仍建议集中定义。写死且**不可配置**的端口、随环境或设备变化的值，仍按上面 ≥3 处判 🟠。scan 的 `hardcoded_endpoint` 命中里，文件名像服务商表或配置表的（scan 会标注）通常本身就是唯一信息源，先确认是不是重复再判。
+### 2.1 ★ Hardcoded Values
+- **Check**: scan §2's `hardcoded_color` / `hardcoded_size` / `hardcoded_endpoint` / `local_path`. Also check whether magic numbers (timeouts, retry counts, page sizes, thresholds, dimensions) and environment-dependent values (ports, domains, bucket names, model names, prices) are repeated across files:
+  `git grep -nE "<suspicious_value>" -- <src_dir>`
+- **Verdict**: Same value appears **≥3 times**, or varies by environment/machine yet is hardcoded → 🟠 (classic source of "updated one spot, missed the rest"). Appears 2 times → 🟡. Machine-specific absolute paths (`C:\…`, `D:\…`, `/Users/<name>/`) in runtime code → 🟠 (breaks on another machine); appearing only in hint copy, comments, or defaults with an env-var fallback → pass. Clear single-use local constant → pass. **Fixed protocol/format constants** (sample rates, magic file headers, spec constants other than standard ports, or app-defined default ports that can be overridden by config) repeated in multiple places cap at 🟡: they rarely change, though centralizing is still recommended. Hardcoded **non-configurable** ports or values that vary by environment/device still score 🟠 at ≥3 occurrences. For `hardcoded_endpoint` hits in files that look like provider or config tables (annotated by `scan.py`), verify whether the file itself is the single source of truth before flagging duplication.
 
-### 2.2 ★ 重复实现
-- **查**：scan §4 "similar code blocks" 给出字面重复。语义重复靠人读：按动词 `git grep -nE "(function|def|func|fn) (format|parse|normalize|debounce|throttle|retry|fetch|load|save|validate|convert)\w*"`，把同名或近义的放在一起比。查有没有 `utils/` / `helpers/` 却在功能文件里又私写一份。
-- **判**：两份实现**行为不同**（边界处理、单位、时区、取整不一致）→ 🟠，这是隐藏 bug 源。行为相同的重复 → 🟡。指出保留哪一份。
+### 2.2 ★ Duplicate Implementations
+- **Check**: scan §4 "similar code blocks" catches literal duplication. Catch semantic duplication by reading: search by verb `git grep -nE "(function|def|func|fn) (format|parse|normalize|debounce|throttle|retry|fetch|load|save|validate|convert)\w*"` and compare same-named or near-synonymous helpers side by side. Check whether `utils/` or `helpers/` exists yet feature files still roll private copies.
+- **Verdict**: Two implementations with **divergent behavior** (edge cases, units, timezones, rounding differ) → 🟠, a hidden bug factory. Identical behavior → 🟡. Specify which copy to keep.
 
-### 2.3 ★ Fallback 叠层与冗余残留
-- **查**：
-  - scan §2 `fallback_legacy` 与 `suspicious_filenames`（old / backup / copy / v2 / new / tmp…）
-  - 同一功能的多条代码路径：`try 新方案 → catch → 旧方案`、`if (useNewX)`、永远为真/假的开关
-  - 连续 ≥5 行注释掉的代码
-  - 未被引用的文件和导出：**仅当工具已安装**时只读运行——TS/JS `npx --no-install knip` 或 `npx --no-install ts-prune`，Python `vulture`，Go `deadcode`。没装就用 grep 的标准做法：scan §2 `unreferenced_scripts` 列出文件名在别处从未出现的脚本；对可疑的导出逐个 `git grep -nw <导出名> -- . ':!<定义它的文件>'`，零结果即为死导出。需要编译项目的工具（`cargo udeps`、`periphery`）不在体检中运行，只在处方里建议。
-- **判**：按阶段校准。**未发布**项目里为旧数据/旧接口保留的兼容 fallback → 🟠（没有旧用户，兼容谁？）。已发布项目里有迁移期限的 fallback → 通过，没期限的 → 🟡。死文件/死导出 → 🟡，数量大时 🟠。
+### 2.3 ★ Stacked Fallbacks & Redundant Leftovers
+- **Check**:
+  - scan §2 `fallback_legacy` and `suspicious_filenames` (`old` / `backup` / `copy` / `v2` / `new` / `tmp`…)
+  - Multiple code paths for the same feature: `try new path → catch → old path`, `if (useNewX)`, always-true/always-false feature flags
+  - ≥5 consecutive lines of commented-out code
+  - Unreferenced files and exports: **only when the tool is already installed**, run read-only—TS/JS `npx --no-install knip` or `npx --no-install ts-prune`, Python `vulture`, Go `deadcode`. If not installed, use standard grep: scan §2 `unreferenced_scripts` lists scripts whose names appear nowhere else; for suspicious exports, run `git grep -nw <export_name> -- . ':!<defining_file>'`—zero matches means a dead export. Do not run tools that require compiling the project (`cargo udeps`, `periphery`) during the checkup; suggest them in the prescription instead.
+- **Verdict**: Calibrate by stage. Compatibility fallbacks for old data/APIs in an **unreleased** project → 🟠 (there are no legacy users—who is this protecting?). Fallbacks with a migration deadline in a released project → pass; without a deadline → 🟡. Dead files/exports → 🟡, or 🟠 in large volume.
 
-### 2.4 ★ 占位与假数据
-- **查**：scan §2 `mock_data` 与 `todo_comment`；生产路径里的 mock 数据、返回写死成功的函数、`// TODO: 接真实接口`、为调试临时关闭的校验（`if (true)`、`skipAuth`、`return true // for now`）、用 `sleep` 等待代替真正的完成信号。
-- **判**：用户以为能用但实际是假的功能 → 🔴（核心流程）或 🟠。TODO 注释本身 → ⚪，除非它标记的是一个未完成的核心流程。
+### 2.4 ★ Placeholders & Mock Data
+- **Check**: scan §2 `mock_data` and `todo_comment`; mock data in production paths, functions returning hardcoded success, `// TODO: hook up real API`, validation temporarily bypassed for debugging (`if (true)`, `skipAuth`, `return true // for now`), `sleep` waits standing in for real completion signals.
+- **Verdict**: A feature users believe works that is actually fake → 🔴 (core flow) or 🟠. TODO comments on their own → ⚪, unless marking an unfinished core flow.
 
-### 2.5 错误处理（两个方向都查）
-- **查**：
-  - 吞错误：scan §2 `swallowed_error`；关键路径（保存、支付、导出、同步）里 catch 后只打日志继续
-  - 过度防御：对不可能为空的值层层判空、每个函数包 try/catch、重复校验同一个输入——偏防御型模型的典型产物，会把真实错误淹没
-  - 用户可见的错误态：失败时用户看到什么？
-- **判**：关键路径静默失败（数据可能丢）→ 🔴/🟠。过度防御大量存在 → 🟡（处方：错误只在边界处理一次）。有注释说明的有意忽略（如可选资源加载失败）→ 通过。
+### 2.5 Error Handling (Check Both Extremes)
+- **Check**:
+  - Swallowed errors: scan §2 `swallowed_error`; critical paths (save, payment, export, sync) catching an error, logging, and continuing silently
+  - Over-defensive code: repeated null checks on non-nullable values, wrapping every function in `try/catch`, validating the same input at every layer—a signature output of overly defensive models that buries real failures
+  - User-visible error states: what does the user see on failure?
+- **Verdict**: Silent failure on a critical path (potential data loss) → 🔴/🟠. Widespread over-defensive boilerplate → 🟡 (prescription: handle errors once at boundaries). Intentional ignores with an explanatory comment (e.g., optional asset load failure) → pass.
 
-### 2.6 类型安全逃逸
-- **查**：scan §2 的 `type_escape_*` 与 `lint_disable_js`；`tsconfig` 是否 `strict`；mypy/pyright 配置；Swift 的 `!` 强制解包与 `try!`；lint 规则是否被大面积关闭。
-- **判**：密度高或集中在核心模块 → 🟡；类型检查曾经开着、后来被整体关闭 → 🟠（agent 失去了最便宜的自检手段）。**从未启用**（纯 JS/Python，没有 checkJs、JSDoc 类型、mypy）且代码超过 ~5000 行 → 🟡，处方是渐进开启（如 JS 文件头加 `// @ts-check`）；小项目 → 通过。
+### 2.6 Type-Safety Escapes
+- **Check**: scan §2 `type_escape_*` and `lint_disable_js`; whether `tsconfig` has `strict`; mypy/pyright config; Swift `!` force-unwraps and `try!`; whether lint rules have been disabled wholesale.
+- **Verdict**: High density or concentrated in core modules → 🟡; type checking was once enabled and later turned off globally → 🟠 (deprives agents of their cheapest self-check). **Never enabled** (plain JS/Python with no `checkJs`, JSDoc types, or mypy) on a codebase over ~5,000 lines → 🟡, prescribing gradual adoption (e.g., `// @ts-check` at top of JS files); small projects → pass.
 
-### 2.7 ★ 巨型文件与模块边界
-- **查**：scan §1。超过 ~800 行（界面相关文件：组件、视图、窗口脚本，不论语言）或 ~1000 行（其他）的文件，看它是否混了 UI、状态、IO、业务规则。函数超过 ~100 行的列出。JS/TS 若已安装 madge，`npx --no-install madge --circular <入口>` 查循环依赖。
-- **判**：核心功能集中在一个巨型文件 → 🟠：agent 每次改动都要读全文件，token 高，且容易误改无关部分。处方给出拆分边界（按职责，不按行数平均切）。测试自检类大文件 → 🟡。
+### 2.7 ★ God Files & Module Boundaries
+- **Check**: scan §1. For files over ~800 lines (UI-related files: components, views, window scripts, regardless of language) or ~1,000 lines (other files), inspect whether they mix UI, state, IO, and business rules. List functions exceeding ~100 lines. In JS/TS, if `madge` is installed, run `npx --no-install madge --circular <entry>` to check circular dependencies.
+- **Verdict**: Core functionality crammed into a single god file → 🟠: every agent edit must read the entire file, burning tokens and risking unintended edits to unrelated logic. Give concrete split boundaries in the prescription (by responsibility, not equal line counts). Oversized self-test/harness files → 🟡.
 
-### 2.8 调试残留
-- **查**：scan §2 `debug_leftover`（已排除 tools/、scripts/、cli/ 下的命令行工具）。打开的 debug 开关、测试钩子进了生产代码。
-- **判**：泄露敏感信息的日志 → 🟠；其余 → ⚪/🟡。
+### 2.8 Debug Leftovers
+- **Check**: scan §2 `debug_leftover` (already excludes CLI tools under `tools/`, `scripts/`, `cli/`). Left-on debug flags or test hooks shipped in production code.
+- **Verdict**: Logs leaking sensitive data → 🟠; everything else → ⚪/🟡.
 
-### 2.9 过度工程
-- **查**：只有一个实现的抽象接口/工厂、没人用的配置项、为"将来"预留的插件系统、包了一层又一层的 wrapper。
-- **判**：🟡。处方是内联与删除。agent 读到抽象会以为需要扩展它，从而把复杂度继续堆高。
+### 2.9 Over-Engineering
+- **Check**: Abstract interfaces or factories with a single implementation, unused config options, plugin systems built "for the future", wrappers stacked around wrappers.
+- **Verdict**: 🟡. Prescribe inlining and deletion. When an agent sees an abstraction, it assumes it is meant to be extended and piles on even more complexity.
 
-### 2.10 一次性脚本蔓延
-- **查**：scan §2 `one_off_scripts`（按文件名）和 `unreferenced_scripts`（文件名在别处从未出现）；同一目录下一堆没有入口说明的脚本也算。逐个看：还被 README、规则文件、package.json scripts 或测试引用吗？对应的问题还存在吗？
-- **判**：无人引用、问题已解决的探路脚本 → 🟡（agent 会把它们当成现行工具去读、去改）。反复使用的调试脚本 → 通过，但应有入口说明（对照 4.6）。
+### 2.10 One-Off Script Sprawl
+- **Check**: scan §2 `one_off_scripts` (by filename) and `unreferenced_scripts` (filename mentioned nowhere else); clusters of undocumented scripts in the same directory also count. Inspect each: is it referenced by README, rule files, `package.json` scripts, or tests? Does the problem it investigated still exist?
+- **Verdict**: Unreferenced probe scripts for already-solved issues → 🟡 (agents will treat them as active tools to read and maintain). Repeatedly used debug scripts → pass, provided they have entry-point documentation (cross-check 4.6).
 
-### 2.11 说谎的注释与改动叙述
-- **查**：
-  - 改动叙述：scan §2 `change_narration`——注释在讲"这次改了什么"（`// NEW:`、`// 已移除旧逻辑`、`// 按用户要求改为…`、`// previously …`），而不是代码现在做什么。那是提交说明该写的东西。
-  - 说谎的注释：从 scan §1 最大的 2–3 个文件里抽 5 处函数头注释、docstring 或文件头说明，核对它描述的参数、返回值、行为、调用关系是否与代码一致。3.2 只查文档，这里查的是代码里的注释——agent 改哪里就会读到哪里的注释。
-- **判**：核心模块里注释与代码矛盾 → 🟠，写成"注释说 X，代码是 Y"；零星过期 → 🟡。改动叙述 → ⚪，成片出现 → 🟡（处方：删掉，历史归 git）。
+### 2.11 Lying Comments & Edit Narration
+- **Check**:
+  - Edit narration: scan §2 `change_narration`—comments describing "what changed in this edit" (`// NEW:`, `// removed old logic`, `// changed as requested`, `// previously …`) rather than what the code does now. That belongs in commit messages.
+  - Lying comments: sample 5 function headers, docstrings, or file-header comments from the 2–3 largest files in scan §1, and verify whether their stated parameters, return values, behavior, and call relationships match the code. Item 3.2 checks standalone docs; this item checks in-code comments—whatever file an agent edits, it reads the comments right there.
+- **Verdict**: Comments in core modules contradicting the code → 🟠, written as "comment says X, code does Y"; isolated staleness → 🟡. Edit narration → ⚪, or 🟡 when pervasive (prescription: delete; history belongs in git).

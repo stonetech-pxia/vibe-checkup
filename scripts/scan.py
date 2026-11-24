@@ -271,7 +271,22 @@ def is_generated(r, text):
 
 # ---------------------------------------------------------------- main
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        description="Read-only mechanical lead scanner for vibe-checkup.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "sections:\n"
+            "  0  Profile (source lines, manifests, CI/hooks, vendored/generated, env vars)\n"
+            "  1  Largest source files (god-file candidates)\n"
+            "  2  Pattern hits per file (source only) + suspicious/one-off/unreferenced scripts\n"
+            "  3  Possible secrets (values redacted)\n"
+            "  4  Duplication (similar code blocks, mirrored directories)\n"
+            "  5  Docs and agent rules (plan docs, stale docs, broken refs, ignored docs)\n"
+            "  6  Tests (weak assertions, skipped/only counts)\n"
+            "  7  Git history (fix-churn hotspots, oversized/vague commits, bad tracked files)\n"
+            "  8  Licenses (copyleft/source-available check for JS deps and in-repo LICENSE files)"
+        ),
+    )
     ap.add_argument("root")
     ap.add_argument("--max", type=int, default=12, help="rows per list")
     ap.add_argument("--section", default="", help="comma-separated section numbers to print, e.g. 0,3,8")

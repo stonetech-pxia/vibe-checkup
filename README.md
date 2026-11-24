@@ -22,9 +22,21 @@ Long-running AI-assisted projects rarely break all at once—they accumulate **s
 
 ## Installation
 
-### Claude Code
+### Recommended (`skills.sh` CLI)
 
-Install globally (available across all projects):
+Works across Claude Code, Codex, Cursor, Antigravity, and other Agent Skills-compatible tools:
+
+```bash
+# Install globally (available in all projects)
+npx skills add stonetech-pxia/vibe-checkup -g
+
+# Or install into the current project only
+npx skills add stonetech-pxia/vibe-checkup
+```
+
+### Manual Installation (`git clone`)
+
+**Claude Code** (global):
 
 ```bash
 git clone https://github.com/stonetech-pxia/vibe-checkup.git ~/.claude/skills/vibe-checkup
@@ -36,19 +48,21 @@ On Windows (PowerShell):
 git clone https://github.com/stonetech-pxia/vibe-checkup.git "$HOME\.claude\skills\vibe-checkup"
 ```
 
-Or install inside a single repository:
+Or inside a single repository:
 
 ```bash
 git clone https://github.com/stonetech-pxia/vibe-checkup.git .claude/skills/vibe-checkup
 ```
 
-### Other Agent Skills Tools (Codex, Cursor, Antigravity, etc.)
-
-Clone this repository into your tool's skills directory (for example `~/.agents/skills/vibe-checkup` or `<project>/.agents/skills/vibe-checkup`).
+**Other Agent Skills tools**: clone into your tool's skills directory (e.g., `~/.agents/skills/vibe-checkup` or `<project>/.agents/skills/vibe-checkup`).
 
 ### Updating
 
 ```bash
+# If installed via skills CLI
+npx skills update
+
+# If installed via git clone
 git -C ~/.claude/skills/vibe-checkup pull
 ```
 
@@ -86,3 +100,7 @@ vibe-checkup/
     ├── scan.py              # Read-only mechanical scanner (collects leads)
     └── baseline.py          # Baseline stamping, fast-mode scoping, scoring, and report assembly
 ```
+
+## License
+
+[MIT](LICENSE)
